@@ -250,7 +250,9 @@ def check_formula_contract(instrument_path: Path) -> Dict[str, Any]:
     return info
 
 
-def calculate_compliance_levels(cli_info: Dict[str, Any], zones_info: Dict[str, Any], formula_info: Dict[str, Any]) -> Dict[str, Any]:
+def calculate_compliance_levels(
+    cli_info: Dict[str, Any], zones_info: Dict[str, Any], formula_info: Dict[str, Any]
+) -> Dict[str, Any]:
     """Niveaux de conformité multi-axes (CLI / zones / formule)."""
 
     def assess_level(full: bool, partial: bool) -> str:
@@ -260,6 +262,7 @@ def calculate_compliance_levels(cli_info: Dict[str, Any], zones_info: Dict[str, 
             return "PARTIAL"
         return "MINIMAL"
 
+    # CLI
     cli_full = bool(
         cli_info.get("help_valid", False)
         and len(cli_info.get("subcommands", [])) >= 2
@@ -268,12 +271,14 @@ def calculate_compliance_levels(cli_info: Dict[str, Any], zones_info: Dict[str, 
     cli_partial = bool(cli_info.get("help_valid", False))
     cli_level = assess_level(cli_full, cli_partial)
 
+    # Zones
     zones = zones_info.get("zones") or {}
     literal_zones = {k: v for k, v in zones.items() if isinstance(v, (int, float, str)) and not isinstance(v, bool)}
     zones_full = len(literal_zones) > 0
     zones_partial = bool(zones_info.get("attempted", False))
     zones_level = assess_level(zones_full, zones_partial)
 
+    # Formule
     formula_full = bool(formula_info.get("golden_pass", False))
     formula_partial = bool(formula_info.get("golden_attempted", False))
     formula_level = assess_level(formula_full, formula_partial)
@@ -303,7 +308,9 @@ def generate_contract_report(instrument_path: Path, check_formula: bool) -> Dict
         "summary": {
             "cli_help_valid": cli.get("help_valid", False),
             "zones_attempted": zones.get("attempted", False),
-            "zones_count": len([k for k, v in (zones.get("zones") or {}).items() if isinstance(v, (int, float, str)) and not isinstance(v, bool)]),
+            "zones_count": len(
+                [k for k, v in (zones.get("zones") or {}).items() if isinstance(v, (int, float, str)) and not isinstance(v, bool)]
+            ),
             "formula_checked": bool(check_formula),
             "formula_pass": bool(formula.get("golden_pass", False)) if check_formula else False,
         },
