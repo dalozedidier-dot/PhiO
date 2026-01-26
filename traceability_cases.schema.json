@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PHIO Traceability Cases",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "case_id",
+      "pre_source",
+      "pre",
+      "post",
+      "verdict_E"
+    ],
+    "properties": {
+      "case_id": {
+        "type": "string",
+        "pattern": "^[0-9]{4}$"
+      },
+      "pre_source": {
+        "type": "string",
+        "minLength": 1
+      },
+      "pre": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "A",
+          "B"
+        ],
+        "properties": {
+          "A": {
+            "type": "array",
+            "minItems": 5,
+            "maxItems": 5,
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2
+            }
+          },
+          "B": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2
+            }
+          }
+        }
+      },
+      "post": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "A",
+          "B"
+        ],
+        "properties": {
+          "A": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "array",
+                "minItems": 5,
+                "maxItems": 5,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2
+                }
+              }
+            ]
+          },
+          "B": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2
+                }
+              }
+            ]
+          }
+        }
+      },
+      "verdict_E": {
+        "type": "string",
+        "enum": [
+          "INCOMPATIBLE",
+          "INCONCLUSIF",
+          "COMPATIBLE_PARTIELLE",
+          "COMPATIBLE"
+        ]
+      }
+    }
+  }
+}
