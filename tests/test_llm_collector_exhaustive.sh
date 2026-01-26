@@ -20,8 +20,8 @@ TEST_ROOT="$(mktemp -d)"
 FAILURES=0
 TESTS_RUN=0
 
-inc() { ((TESTS_RUN++)); }
-fail() { echo "❌ Échec: $1"; ((FAILURES++)); }
+inc(){ ((++TESTS_RUN)); }
+fail() { echo "❌ Échec: $1"; ((++FAILURES)); }
 pass() { echo "✅ Réussi: $1"; }
 
 cleanup() {

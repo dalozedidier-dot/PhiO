@@ -24,20 +24,20 @@ for t in "${tests[@]}"; do
   fi
   if [ "$ok" -eq 1 ]; then
     echo "✅ OK: $t"
-    ((passed++))
+    ((++passed))
   else
     echo "❌ KO: $t"
-    ((failed++))
+    ((++failed))
   fi
 done
 
 echo -e "\n🎯 Smoke test"
 if QUIET=1 "$REPO_ROOT/scripts/phio_llm_collect.sh" "$REPO_ROOT" "$REPO_ROOT/_final_test" >/dev/null 2>&1; then
   echo "✅ Smoke OK"
-  ((passed++))
+  ((++passed))
 else
   echo "❌ Smoke KO"
-  ((failed++))
+  ((++failed))
 fi
 
 echo -e "\n📊 Résumé: pass=$passed fail=$failed"
