@@ -2,7 +2,7 @@
   "contract_version": "1.5",
   "instrument_path": "/home/runner/work/PhiO/PhiO/phi_otimes_o_instrument_v0_1.py",
   "instrument_hash": "sha256:e1dde7d959de7d6dbf419ff64b73ac27fa44a3481725b3a0d31cb306d846b941",
-  "validation_timestamp": "2026-01-26T20:03:46.249354+00:00",
+  "validation_timestamp": "2026-01-26T20:14:50.934074+00:00",
   "compliance": {
     "axes": {
       "cli": "FULL",
