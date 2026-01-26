@@ -1,9 +1,8 @@
 import os
 from pathlib import Path
 
-# Instrument
-PHIO_INSTRUMENT = os.environ.get("PHIO_INSTRUMENT", "phi_otimes_o_instrument_v0_1.py")
-INSTRUMENT_PATH = Path(PHIO_INSTRUMENT).resolve()
+REPO_ROOT = Path(__file__).resolve().parents[1]
+INSTRUMENT_PATH = REPO_ROOT / "scripts" / "phi_otimes_o_instrument_v0_1.py"
 
 # Robustesse
 ROBUSTNESS_MAX_ZONE_CHANGE_RATE = float(os.environ.get("PHIO_ROBUSTNESS_RATE", "0.30"))
