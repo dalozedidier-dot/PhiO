@@ -11,7 +11,7 @@ echo
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COLLECTOR="${COLLECTOR:-$REPO_ROOT/scripts/phio_llm_collect.sh}"
 
-if [ ! -f "$COLLECTOR" ]; then
+if [ ! -x "$COLLECTOR" ]; then
   echo "❌ Collecteur introuvable ou non exécutable: $COLLECTOR" >&2
   exit 1
 fi
@@ -95,7 +95,7 @@ echo -e "\n🚀 DÉBUT DES TESTS\n"
 # --- Test 1: Exécution de base ---
 echo "=== Test 1: Exécution de base ==="
 inc
-if QUIET=1 bash "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_basic" >/dev/null 2>&1; then
+if QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_basic" >/dev/null 2>&1; then
   pass "Exécution de base"
 else
   fail "Exécution de base"
@@ -138,7 +138,7 @@ inc
 export PHIO_SECRET_KEY="should_be_redacted"
 export PHIO_API_KEY="another_secret"
 export REGULAR_VAR="should_not_appear"
-QUIET=1 bash "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_redaction" >/dev/null 2>&1 || true
+QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_redaction" >/dev/null 2>&1 || true
 meta="$REPO_ROOT/_test_output_redaction/meta.txt"
 
 if grep -q "PHIO_SECRET_KEY=<REDACTED>" "$meta" && grep -q "PHIO_API_KEY=<REDACTED>" "$meta"; then
@@ -162,7 +162,7 @@ unset PHIO_SECRET_KEY PHIO_API_KEY REGULAR_VAR
 echo -e "\n=== Test 5: Limites concat ==="
 inc
 MAX_FILE_BYTES=100 MAX_FILE_LINES=10 MAX_CONCAT_LINES=50 QUIET=1 \
-  bash "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_limits" >/dev/null 2>&1 || true
+  "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_limits" >/dev/null 2>&1 || true
 concat="$REPO_ROOT/_test_output_limits/all_text.txt"
 if [ -f "$concat" ]; then
   lines=$(wc -l < "$concat" | tr -d ' ')
@@ -189,7 +189,7 @@ echo -e "\n=== Test 6: STRICT=1 ==="
 inc
 no_base="$(mktemp -d)"
 echo "README" > "$no_base/README.md"
-if STRICT=1 QUIET=1 bash "$COLLECTOR" "$no_base" "$REPO_ROOT/_test_output_strict" >/dev/null 2>&1; then
+if STRICT=1 QUIET=1 "$COLLECTOR" "$no_base" "$REPO_ROOT/_test_output_strict" >/dev/null 2>&1; then
   echo "  ❌ STRICT=1 aurait dû échouer"
   fail "STRICT trop permissif"
 else
@@ -204,7 +204,7 @@ inc
 mkdir -p "$TEST_ROOT/test-results"
 echo '<testsuite/>' > "$TEST_ROOT/test-results/junit.xml"
 echo '{"passed":10}' > "$TEST_ROOT/report.json"
-INCLUDE_TEST_OUTPUTS=1 QUIET=1 bash "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_with_outputs" >/dev/null 2>&1 || true
+INCLUDE_TEST_OUTPUTS=1 QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_with_outputs" >/dev/null 2>&1 || true
 if [ -f "$REPO_ROOT/_test_output_with_outputs/bundle/test-results/junit.xml" ] && \
    [ -f "$REPO_ROOT/_test_output_with_outputs/bundle/report.json" ]; then
   pass "INCLUDE_TEST_OUTPUTS OK"
@@ -224,7 +224,7 @@ PY
 
 # timeout portable: si la commande `timeout` n'existe pas, on exécute sans.
 if command -v timeout >/dev/null 2>&1; then
-  if timeout 10 env MAX_FILE_BYTES=1000000 MAX_CONCAT_LINES=10000 QUIET=1 bash "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_perf" >/dev/null 2>&1; then
+  if timeout 10 env MAX_FILE_BYTES=1000000 MAX_CONCAT_LINES=10000 QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_perf" >/dev/null 2>&1; then
     pass "Performance OK"
   else
     code=$?
@@ -235,7 +235,7 @@ if command -v timeout >/dev/null 2>&1; then
     fi
   fi
 else
-  QUIET=1 bash "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_perf" >/dev/null 2>&1 || fail "Performance (sans timeout)"
+  QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_perf" >/dev/null 2>&1 || fail "Performance (sans timeout)"
   pass "Performance (sans timeout) exécuté"
 fi
 
@@ -289,7 +289,7 @@ inc
 if [ -d "$TEST_ROOT/.git" ]; then
   mv "$TEST_ROOT/.git" "$TEST_ROOT/.git_backup"
 fi
-INCLUDE_GIT=1 QUIET=1 bash "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_no_git" >/dev/null 2>&1 || true
+INCLUDE_GIT=1 QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_no_git" >/dev/null 2>&1 || true
 if [ -d "$TEST_ROOT/.git_backup" ]; then
   mv "$TEST_ROOT/.git_backup" "$TEST_ROOT/.git"
 fi
@@ -302,7 +302,7 @@ fi
 # --- Test 12: INCLUDE_PIP_FREEZE (optionnel) ---
 echo -e "\n=== Test 12: INCLUDE_PIP_FREEZE ==="
 inc
-INCLUDE_PIP_FREEZE=1 QUIET=1 bash "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_pip" >/dev/null 2>&1 || true
+INCLUDE_PIP_FREEZE=1 QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_pip" >/dev/null 2>&1 || true
 if [ -f "$REPO_ROOT/_test_output_pip/pip_freeze.txt" ]; then
   pass "pip_freeze.txt généré"
 else
@@ -313,7 +313,7 @@ fi
 # --- Test 13: INCLUDE_CONCAT=0 ---
 echo -e "\n=== Test 13: INCLUDE_CONCAT=0 ==="
 inc
-INCLUDE_CONCAT=0 QUIET=1 bash "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_no_concat" >/dev/null 2>&1 || true
+INCLUDE_CONCAT=0 QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_no_concat" >/dev/null 2>&1 || true
 if [ ! -f "$REPO_ROOT/_test_output_no_concat/all_text.txt" ]; then
   pass "INCLUDE_CONCAT=0 OK"
 else
@@ -329,14 +329,14 @@ touch "$TEST_ROOT/file\"with\"doublequotes.txt"
 touch "$TEST_ROOT/file|with|pipes.txt"
 touch "$TEST_ROOT/file&with&ampersands.txt"
 touch "$TEST_ROOT/file#with#hashes.txt"
-QUIET=1 bash "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_paths" >/dev/null 2>&1 && pass "Chemins spéciaux OK" || fail "Chemins spéciaux KO"
+QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_paths" >/dev/null 2>&1 && pass "Chemins spéciaux OK" || fail "Chemins spéciaux KO"
 
 # --- Test 15: Déterminisme (sur la structure copiée, pas sur meta/report/manifest) ---
 echo -e "\n=== Test 15: Déterminisme (structure bundle) ==="
 inc
-QUIET=1 bash "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_det1" >/dev/null 2>&1
+QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_det1" >/dev/null 2>&1
 sleep 1
-QUIET=1 bash "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_det2" >/dev/null 2>&1
+QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_det2" >/dev/null 2>&1
 
 # On compare tree.txt (déterministe) + la liste des chemins dans bundle/
 if cmp -s "$REPO_ROOT/_test_output_det1/tree.txt" "$REPO_ROOT/_test_output_det2/tree.txt"; then
@@ -366,21 +366,21 @@ mkdir -p "$TEST_ROOT/deep/level1/level2/level3/level4/level5/level6/level7/level
 echo "Deep file" > "$TEST_ROOT/deep/level1/level2/level3/level4/level5/level6/level7/level8/level9/level10/file.txt"
 for i in $(seq 1 100); do echo "File $i" > "$TEST_ROOT/deep/file_$i.txt"; done
 if command -v timeout >/dev/null 2>&1; then
-  if timeout 15 env QUIET=1 bash "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_deep" >/dev/null 2>&1; then
+  if timeout 15 env QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_deep" >/dev/null 2>&1; then
     pass "Profondeur OK"
   else
     code=$?
     [ "$code" -eq 124 ] && fail "Profondeur (timeout)" || fail "Profondeur (exit $code)"
   fi
 else
-  QUIET=1 bash "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_deep" >/dev/null 2>&1 && pass "Profondeur OK" || fail "Profondeur KO"
+  QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_deep" >/dev/null 2>&1 && pass "Profondeur OK" || fail "Profondeur KO"
 fi
 
 # --- Test 17: Symlinks (dans fixtures copiées) ---
 echo -e "\n=== Test 17: Symlinks ==="
 inc
 ln -sf "simple_matrix.md" "$TEST_ROOT/fixtures/symlink_to_fixture"
-QUIET=1 bash "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_symlink" >/dev/null 2>&1 || true
+QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_symlink" >/dev/null 2>&1 || true
 if [ -L "$REPO_ROOT/_test_output_symlink/bundle/fixtures/symlink_to_fixture" ]; then
   pass "Symlink préservé"
 elif [ -f "$REPO_ROOT/_test_output_symlink/bundle/fixtures/symlink_to_fixture" ]; then
@@ -395,7 +395,7 @@ echo -e "\n=== Test 18: Permissions ==="
 inc
 echo "secret" > "$TEST_ROOT/fixtures/no_read.txt"
 chmod 000 "$TEST_ROOT/fixtures/no_read.txt" || true
-QUIET=1 bash "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_perm" >/dev/null 2>&1 || true
+QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_perm" >/dev/null 2>&1 || true
 chmod 644 "$TEST_ROOT/fixtures/no_read.txt" || true
 if [ -f "$REPO_ROOT/_test_output_perm/phio_llm_bundle.tar.gz" ]; then
   pass "Robuste aux permissions (ne crash pas)"

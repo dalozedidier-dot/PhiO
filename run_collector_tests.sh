@@ -32,7 +32,7 @@ for t in "${tests[@]}"; do
 done
 
 echo -e "\n🎯 Smoke test"
-if QUIET=1 bash "$REPO_ROOT/scripts/phio_llm_collect.sh" "$REPO_ROOT" "$REPO_ROOT/_final_test" >/dev/null 2>&1; then
+if QUIET=1 "$REPO_ROOT/scripts/phio_llm_collect.sh" "$REPO_ROOT" "$REPO_ROOT/_final_test" >/dev/null 2>&1; then
   echo "✅ Smoke OK"
   ((passed++))
 else

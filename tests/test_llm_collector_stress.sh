@@ -28,9 +28,9 @@ done
 
 echo "Lancement du collecteur..."
 if command -v timeout >/dev/null 2>&1; then
-  timeout 30 env QUIET=1 MAX_FILE_BYTES=100000 MAX_CONCAT_LINES=50000 bash "$COLLECTOR" "$STRESS_ROOT" "$OUT" >/dev/null 2>&1 || code=$?
+  timeout 30 env QUIET=1 MAX_FILE_BYTES=100000 MAX_CONCAT_LINES=50000 "$COLLECTOR" "$STRESS_ROOT" "$OUT" >/dev/null 2>&1 || code=$?
 else
-  env QUIET=1 MAX_FILE_BYTES=100000 MAX_CONCAT_LINES=50000 bash "$COLLECTOR" "$STRESS_ROOT" "$OUT" >/dev/null 2>&1 || code=$?
+  env QUIET=1 MAX_FILE_BYTES=100000 MAX_CONCAT_LINES=50000 "$COLLECTOR" "$STRESS_ROOT" "$OUT" >/dev/null 2>&1 || code=$?
 fi
 code="${code:-0}"
 

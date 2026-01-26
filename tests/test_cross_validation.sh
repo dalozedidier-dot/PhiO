@@ -18,14 +18,14 @@ touch "$TEST_DIR/tests/__init__.py"
 echo "README" > "$TEST_DIR/README.md"
 
 echo "Run 1: defaults"
-QUIET=1 bash "$COLLECTOR" "$TEST_DIR" "$REPO_ROOT/_cross1" >/dev/null 2>&1
+QUIET=1 "$COLLECTOR" "$TEST_DIR" "$REPO_ROOT/_cross1" >/dev/null 2>&1
 
 echo "Run 2: modified limits"
 env MAX_FILE_BYTES=1000 MAX_CONCAT_LINES=100 INCLUDE_PIP_FREEZE=0 QUIET=1 \
-  bash "$COLLECTOR" "$TEST_DIR" "$REPO_ROOT/_cross2" >/dev/null 2>&1
+  "$COLLECTOR" "$TEST_DIR" "$REPO_ROOT/_cross2" >/dev/null 2>&1
 
 echo "Run 3: no concat"
-env INCLUDE_CONCAT=0 QUIET=1 bash "$COLLECTOR" "$TEST_DIR" "$REPO_ROOT/_cross3" >/dev/null 2>&1
+env INCLUDE_CONCAT=0 QUIET=1 "$COLLECTOR" "$TEST_DIR" "$REPO_ROOT/_cross3" >/dev/null 2>&1
 
 echo "Compare tree.txt"
 cmp -s "$REPO_ROOT/_cross1/tree.txt" "$REPO_ROOT/_cross2/tree.txt" || { echo "❌ tree.txt différent"; exit 1; }
