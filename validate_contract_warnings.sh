@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "== Validate ContractWarning escalation =="
-
-# Force ContractWarning to be treated as an error (exception)
-export PYTHONWARNINGS="error::contract_warnings.ContractWarning"
-
-python - <<'PY'
+# Validation contractuelle: la catégorie ContractWarning doit pouvoir être escaladée en exception.
+# Le test est *positif* si une exception ContractWarning est levée quand on force le filtre.
+python3 - <<'PY'
 import warnings
 from contract_warnings import ContractWarning
 
-# This MUST raise (because PYTHONWARNINGS=error::contract_warnings.ContractWarning)
-warnings.warn("contract violation", ContractWarning)
-PY
+warnings.simplefilter("error", ContractWarning)
 
-echo "OK: ContractWarning escalated to exception"
+try:
+    warnings.warn("contract violation", ContractWarning)
+    raise SystemExit("❌ ContractWarning n'a PAS été escaladée en exception")
+except ContractWarning:
+    print("✅ OK: ContractWarning escaladée en exception")
+PY
