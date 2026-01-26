@@ -29,16 +29,19 @@ jobs:
 
       - name: Install deps
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install pytest pytest-html
 
       - name: "Hardening: baseline must exist"
         run: |
+          set -euo pipefail
           test -f .contract/contract_baseline.json || (echo "❌ Baseline missing: .contract/contract_baseline.json" && exit 3)
 
       - name: "Hardening: forbid baseline updates in CI"
         run: |
+          set -euo pipefail
           if [ "${PHIO_UPDATE_BASELINE}" = "true" ]; then
             echo "❌ PHIO_UPDATE_BASELINE=true is forbidden in CI"
             exit 3
@@ -52,29 +55,14 @@ jobs:
           ./final_validation.sh
 
       - name: Run all tests (reports)
-        env:
-          PHIO_INSTRUMENT: "phi_otimes_o_instrument_v0_1.py"
         run: |
           set -euo pipefail
           mkdir -p .contract/test-reports/test-results
-          # Sentinelle : garantit que l'upload a toujours au moins 1 fichier
           echo "artifact marker" > .contract/.keep
-
           PYTHONPATH=. pytest tests/ -q --tb=short \
             --junitxml=.contract/test-reports/test-results/pytest.xml \
             --html=.contract/test-reports/report.html \
             --self-contained-html
-
-      - name: Debug .contract before upload
-        if: always()
-        run: |
-          echo "PWD=$(pwd)"
-          echo "LS root:"
-          ls -la
-          echo "LS .contract:"
-          ls -la .contract || true
-          echo "Find .contract files:"
-          find .contract -maxdepth 6 -type f -print || true
 
       - name: Upload artifacts
         if: always()
