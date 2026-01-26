@@ -9,6 +9,7 @@ permissions:
 jobs:
   baseline:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -26,8 +27,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .contract
-          echo "PWD=$(pwd)"
-          ls -la
+
+          # Garde-fous : fichiers attendus
           test -f contract_probe.py
           test -f phi_otimes_o_instrument_v0_1.py
 
@@ -35,8 +36,9 @@ jobs:
             --instrument ./phi_otimes_o_instrument_v0_1.py \
             --out .contract/contract_baseline.json
 
-          echo "Baseline generated:"
-          ls -la .contract
+          # Preuve de production
+          test -s .contract/contract_baseline.json
+          echo "Baseline generated: .contract/contract_baseline.json"
           head -c 300 .contract/contract_baseline.json || true
           echo ""
 
