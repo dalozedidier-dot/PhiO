@@ -1,1 +1,60 @@
-.
+name: Test Exhaustif du Collecteur LLM
+
+on:
+  push:
+    paths:
+      - 'scripts/phio_llm_collect.sh'
+      - 'tests/test_llm_collector_*.sh'
+      - 'tests/test_cross_validation.sh'
+      - 'run_collector_tests.sh'
+  pull_request:
+    paths:
+      - 'scripts/phio_llm_collect.sh'
+      - 'tests/test_llm_collector_*.sh'
+      - 'tests/test_cross_validation.sh'
+      - 'run_collector_tests.sh'
+  workflow_dispatch:
+
+jobs:
+  collector-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Debug + fix collector executable"
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "PWD=$(pwd)"
+          echo "LS scripts:"
+          ls -la scripts || true
+          echo "EXISTS?"; test -e scripts/phio_llm_collect.sh && echo YES || echo NO
+          echo "EXEC?";   test -x scripts/phio_llm_collect.sh && echo YES || echo NO
+          if test -e scripts/phio_llm_collect.sh; then
+            chmod +x scripts/phio_llm_collect.sh
+            echo "After chmod: EXEC?"; test -x scripts/phio_llm_collect.sh && echo YES || echo NO
+          fi
+
+
+      - name: Ensure executable bits
+        run: |
+          chmod +x scripts/phio_llm_collect.sh
+          chmod +x run_collector_tests.sh || true
+          chmod +x tests/test_llm_collector_exhaustive.sh tests/test_llm_collector_stress.sh tests/test_cross_validation.sh || true
+
+      - name: Run suite
+        run: |
+          ./run_collector_tests.sh
+
+      - name: Upload artifacts (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: collector-test-artifacts
+          path: |
+            _test_output_*
+            _stress_output
+            _cross*
+            _final_test
+          if-no-files-found: ignore
+          retention-days: 3
