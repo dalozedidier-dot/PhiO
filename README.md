@@ -1,51 +1,51 @@
-# PhiO
+# PHIO Contract Framework — v1.0.0 (clean)
 
-**PhiO** est un framework de **validation contractuelle** et d’**assurance qualité épistémologique** pour **instruments scientifiques exécutables** (ex. scripts Python).
-Il opère comme une couche de **tests + audit structurel + traçabilité + collecte d’évidence**, orientée **non-régression** et **reproductibilité**.
+Ce dépôt contient un **framework contractuel + test-suite** pour stabiliser des invariants (baseline, conventions, diagnostics)
+et un **collecteur de contexte LLM** (bundle reproductible) utilisable en local ou en CI.
 
-## Portée
+## Contenu
 
-PhiO adresse quatre blocs :
+- `run_all_tests.sh` : suite principale (contrat + tests).
+- `final_validation.sh` : validation rapide.
+- `.contract/contract_baseline.json` : baseline contractuelle (source de vérité).
+- `scripts/phio_llm_collect.sh` : collecteur (bundle + manifest + all_text.txt optionnel).
+- `run_collector_tests.sh` + `tests/test_llm_collector_*.sh` : **batterie de tests extrêmes** du collecteur.
+- `.github/workflows/` : CI (contrat + tests collecteur).
 
-1. **Contrat technique**
-   - Interface CLI (help, sous-commandes, flags)
-   - Invariants de calcul (formules “golden” / propriétés)
-   - Extraction statique (AST) d’éléments structurants (ex. seuils de zones)
-
-2. **Cadres analytiques formels**
-   - DD : détection de shifts de régime
-   - DD-R : restauration post-choc (réelle vs illusoire)
-   - Équilibre E : compatibilité structurelle sans compensation  
-   *(cf. docs internes du projet, si présentes)*
-
-3. **Baseline versionnée (non-régression)**
-   - Contrat de référence sérialisé (baseline)
-   - Diff explicite entre versions (breaking change documenté)
-
-4. **Collecte d’évidence (bundle LLM / forensic)**
-   - Arborescence, hashes SHA256, concaténation contrôlée, copie ciblée
-   - Objectif : reproduction + débogage externe sans perte de contexte
-
-## Non-objectifs (anti-scope)
-
-PhiO n’est pas :
-- une bibliothèque de calcul scientifique (NumPy/SciPy)
-- un framework ML (TensorFlow/scikit-learn)
-- un orchestrateur de workflow (Snakemake/Nextflow/Airflow)
-- un outil de visualisation
-
-PhiO **valide** des instruments ; il ne remplace pas leurs modèles.
-
-## Prérequis
-
-- Python 3.10+ (recommandé)
-- `pytest` (tests)
-- OS : Linux/macOS (Windows possible via WSL pour les scripts shell)
-
-## Installation (mode projet)
+## Lancer en local
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -U pip
-pip install -r requirements.txt
+# setup (hooks, permissions)
+./scripts/dev-setup.sh
+
+# validation rapide
+./final_validation.sh
+
+# suite complète
+./run_all_tests.sh
+```
+
+## Collecter un bundle LLM (debug)
+
+```bash
+# bundle standard
+QUIET=1 ./scripts/phio_llm_collect.sh . _llm_bundle
+
+# mode strict (échoue si baseline/golden absente ou si tests/ absent)
+STRICT=1 QUIET=1 ./scripts/phio_llm_collect.sh . _llm_bundle_strict
+```
+
+## Lancer les tests “max” du collecteur
+
+```bash
+chmod +x run_collector_tests.sh tests/test_llm_collector_*.sh tests/test_cross_validation.sh
+./run_collector_tests.sh
+```
+
+## Documentation
+
+- `docs/Regles_epistemologiques.md`
+- `docs/Glossaire.md`
+- `docs/Frameworks_DD_DDR_E.md`
+- `docs/test_matrices/` (PRE archetypes)
+
