@@ -57,7 +57,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .contract/test-reports/test-results
-          # Sentinelle: garantit que .contract n'est jamais vide (upload-artifact sinon ne prend rien)
+          # Sentinelle : garantit que l'upload a toujours au moins 1 fichier
           echo "artifact marker" > .contract/.keep
 
           PYTHONPATH=. pytest tests/ -q --tb=short \
@@ -65,9 +65,14 @@ jobs:
             --html=.contract/test-reports/report.html \
             --self-contained-html
 
-      - name: Debug .contract (optional proof)
+      - name: Debug .contract before upload
         if: always()
         run: |
+          echo "PWD=$(pwd)"
+          echo "LS root:"
+          ls -la
+          echo "LS .contract:"
+          ls -la .contract || true
           echo "Find .contract files:"
           find .contract -maxdepth 6 -type f -print || true
 
@@ -76,5 +81,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: phio-contract-artifacts
-          path: .contract
+          path: |
+            .contract/contract_baseline.json
+            .contract/.keep
+            .contract/test-reports/**
           if-no-files-found: warn
