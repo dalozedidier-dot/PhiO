@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from .config import INSTRUMENT_PATH
+from tests.config import INSTRUMENT_PATH
 
 
 def _run(cmd, cwd=None):
