@@ -32,6 +32,29 @@ jobs:
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
-      - name: Test with pytest
+      - name: Test with pytest (JUnit)
         run: |
-          pytest
+          mkdir -p reports
+          PYTHONPATH=. pytest --junitxml=reports/junit.xml
+
+      - name: Upload test report (artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-report
+          path: reports/junit.xml
+
+      - name: Write summary
+        if: always()
+        run: |
+          echo "## Rapport CI" >> $GITHUB_STEP_SUMMARY
+          echo "- Workflow: $GITHUB_WORKFLOW" >> $GITHUB_STEP_SUMMARY
+          echo "- Job: $GITHUB_JOB" >> $GITHUB_STEP_SUMMARY
+          echo "- Branche: $GITHUB_REF_NAME" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit: $GITHUB_SHA" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f reports/junit.xml ]; then
+            echo "- JUnit: reports/junit.xml (artifact: junit-report)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- JUnit: absent" >> $GITHUB_STEP_SUMMARY
+          fi
