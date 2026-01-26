@@ -23,24 +23,26 @@ jobs:
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      - name: Generate baseline
+      - name: Generate baseline (with fingerprint)
         run: |
           set -euo pipefail
           mkdir -p .contract
 
-          # Garde-fous : fichiers attendus
-          test -f contract_probe.py
-          test -f phi_otimes_o_instrument_v0_1.py
+          echo "=== contract_probe.py head ==="
+          head -n 20 contract_probe.py
+
+          echo "=== contract_probe.py sha256 ==="
+          python - << 'PY'
+          import hashlib
+          data=open("contract_probe.py","rb").read()
+          print(hashlib.sha256(data).hexdigest())
+          PY
 
           python contract_probe.py \
             --instrument ./phi_otimes_o_instrument_v0_1.py \
             --out .contract/contract_baseline.json
 
-          # Preuve de production
           test -s .contract/contract_baseline.json
-          echo "Baseline generated: .contract/contract_baseline.json"
-          head -c 300 .contract/contract_baseline.json || true
-          echo ""
 
       - name: Commit baseline
         run: |
