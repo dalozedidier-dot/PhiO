@@ -1,4 +1,5 @@
-"""contract_probe.py
+"""
+contract_probe.py
 
 Génère un rapport contractuel (CLI + zones + formule) pour l'instrument Phi⊗O.
 
@@ -13,7 +14,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import subprocess
 import tempfile
 from datetime import datetime, timezone
@@ -52,6 +52,7 @@ def extract_cli_contract(instrument_path: Path) -> Dict[str, Any]:
         return cli
 
     help_text = help_text or ""
+
     # Sous-commandes (présence textuelle, volontairement simple)
     cli["subcommands"] = [s for s in cli["required_subcommands"] if s in help_text]
 
@@ -71,24 +72,70 @@ def extract_cli_contract(instrument_path: Path) -> Dict[str, Any]:
 
 
 def extract_zones_ast_only(instrument_path: Path) -> Dict[str, Any]:
-    """Extraction *honnête* des zones (AST uniquement)."""
+    """
+    Extraction *honnête* des zones (AST uniquement).
+
+    Correction principale:
+    - extract_zone_thresholds_ast(...) peut renvoyer None ou un type non-dict.
+    - On normalise toujours la structure renvoyée pour éviter tout crash et
+      rendre les sorties contractuelles stables.
+    """
+    # Structure normalisée de sortie (toujours conforme à ce shape)
+    normalized: Dict[str, Any] = {
+        "zones": {},
+        "constants": {},
+        "if_chain": [],
+        "attempted": True,
+        "method": "ast",
+    }
+
     try:
-        zones = extract_zone_thresholds_ast(str(instrument_path))
-        zones["attempted"] = True
-        zones["method"] = "ast"
-        # Normaliser un dict plat "zones" pour la conformité
-        # - constants: ZONE_* literals
-        # - if_chain: list[tuple[op, threshold, zone_label]]
+        raw = extract_zone_thresholds_ast(str(instrument_path))
+
+        # Guard 1: None
+        if raw is None:
+            normalized["method"] = "ast_failed"
+            normalized["error"] = "extract_zone_thresholds_ast returned None"
+            return normalized
+
+        # Guard 2: type inattendu
+        if not isinstance(raw, dict):
+            normalized["method"] = "ast_failed"
+            normalized["error"] = f"extract_zone_thresholds_ast returned non-dict: {type(raw).__name__}"
+            return normalized
+
+        # On fusionne prudemment ce que raw apporte
+        # (en gardant les clés attendues)
+        constants = raw.get("constants") if isinstance(raw.get("constants"), dict) else {}
+        if_chain = raw.get("if_chain") if isinstance(raw.get("if_chain"), list) else []
+
+        normalized["constants"] = constants
+        normalized["if_chain"] = if_chain
+
+        # Flat map "zones": uniquement constants (littéraux) pour conformité v1.5
         flat: Dict[str, Any] = {}
-        for k, v in (zones.get("constants") or {}).items():
+        for k, v in constants.items():
             flat[k] = v
-        zones["zones"] = flat
-        return zones
+        normalized["zones"] = flat
+
+        # Si raw avait des champs additionnels utiles, on les conserve sans casser le shape
+        # (mais on évite d'écraser nos clés normalisées)
+        for k, v in raw.items():
+            if k in ("zones", "constants", "if_chain", "attempted", "method", "error"):
+                continue
+            normalized[k] = v
+
+        return normalized
+
     except Exception as e:
-        return {"zones": {}, "attempted": True, "method": "ast_failed", "error": str(e)}
+        normalized["method"] = "ast_failed"
+        normalized["error"] = str(e)
+        return normalized
 
 
-def _run_score_once(instrument_path: Path, input_json: Dict[str, Any]) -> Tuple[int, str, str, Optional[Dict[str, Any]]]:
+def _run_score_once(
+    instrument_path: Path, input_json: Dict[str, Any]
+) -> Tuple[int, str, str, Optional[Dict[str, Any]]]:
     """Exécute `score` et renvoie (rc, stdout, stderr, results_json)."""
     with tempfile.TemporaryDirectory() as td:
         td_path = Path(td)
@@ -99,6 +146,7 @@ def _run_score_once(instrument_path: Path, input_json: Dict[str, Any]) -> Tuple[
 
         cmd = ["python3", str(instrument_path), "score", "--input", str(in_path), "--outdir", str(out_dir)]
         proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
+
         results_path = out_dir / "results.json"
         results = None
         if results_path.exists():
@@ -106,6 +154,7 @@ def _run_score_once(instrument_path: Path, input_json: Dict[str, Any]) -> Tuple[
                 results = json.loads(results_path.read_text(encoding="utf-8"))
             except Exception:
                 results = None
+
         return proc.returncode, proc.stdout or "", proc.stderr or "", results
 
 
@@ -128,6 +177,7 @@ def check_formula_contract(instrument_path: Path) -> Dict[str, Any]:
             return info
 
         template = json.loads(tpath.read_text(encoding="utf-8"))
+
         # Forcer des scores connus (2) si possible
         for it in template.get("items", []):
             if "score" in it:
@@ -170,6 +220,7 @@ def check_formula_contract(instrument_path: Path) -> Dict[str, Any]:
 
             # Tolérance honnête
             import math
+
             k_ok = math.isclose(float(results["K_eff"]), k_eff_expected, rel_tol=1e-5, abs_tol=1e-8)
             t_ok = math.isclose(float(results["T"]), t_expected, rel_tol=1e-5, abs_tol=1e-8)
 
@@ -184,7 +235,9 @@ def check_formula_contract(instrument_path: Path) -> Dict[str, Any]:
     return info
 
 
-def calculate_compliance_levels(cli_info: Dict[str, Any], zones_info: Dict[str, Any], formula_info: Dict[str, Any]) -> Dict[str, Any]:
+def calculate_compliance_levels(
+    cli_info: Dict[str, Any], zones_info: Dict[str, Any], formula_info: Dict[str, Any]
+) -> Dict[str, Any]:
     """Niveaux de conformité multi-axes (CLI / zones / formule)."""
 
     def assess_level(full: bool, partial: bool) -> str:
