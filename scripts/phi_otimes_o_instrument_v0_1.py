@@ -1,11 +1,11 @@
 # phi_otimes_o_instrument_v0_1.py
 # Instrument "PhiO-times-O" — v0.1 (spec minimale structurée)
-# Remarque: c'est une base contractuelle (existence + structure), pas une implémentation métier complète.
+# Remarque: base contractuelle (existence + structure), pas une implémentation métier complète.
 
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 
 __instrument_id__ = "phi_otimes_o"
@@ -29,13 +29,12 @@ class InstrumentSpec:
     version: str
     dimensions: Tuple[Dimension, ...]
     features: Tuple[str, ...] = ()
-    aggregation: Dict[str, Any] = None
-    traceability: Dict[str, Any] = None
-    golden_formula: Dict[str, Any] = None
+    aggregation: Dict[str, Any] | None = None
+    traceability: Dict[str, Any] | None = None
+    golden_formula: Dict[str, Any] | None = None
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
-        # dataclasses -> tuples -> lists for JSON friendliness
         d["dimensions"] = [asdict(x) for x in self.dimensions]
         d["features"] = list(self.features)
         return d
@@ -43,15 +42,12 @@ class InstrumentSpec:
 
 # --- Spec (min) ---------------------------------------------------------------
 
-# Dimensions: structure minimale (adapter les clés/poids à ton cadre réel)
 _DIMENSIONS: Tuple[Dimension, ...] = (
     Dimension(key="phi", label="Phi", weight=1.0, description="Dimension Phi"),
     Dimension(key="o_times", label="O×", weight=1.0, description="Dimension O-times"),
     Dimension(key="o", label="O", weight=1.0, description="Dimension O"),
 )
 
-# Features: flags déclaratifs. Active/désactive ce que tes tests attendent.
-# Exemple: "aggregation", "traceability", "golden_formula", "consistency"
 _FEATURES: Tuple[str, ...] = (
     "aggregation",
     "traceability",
@@ -59,19 +55,16 @@ _FEATURES: Tuple[str, ...] = (
     "consistency",
 )
 
-# Agrégation: description déclarative (à adapter)
 _AGGREGATION: Dict[str, Any] = {
     "method": "weighted_mean",
-    "bottleneck_dominance": False,  # mets True si tu supportes explicitement cette règle
+    "bottleneck_dominance": False,
 }
 
-# Traceabilité: description déclarative (à adapter)
 _TRACEABILITY: Dict[str, Any] = {
     "cases_optional": True,
     "schema": "minimal",
 }
 
-# Golden formula: description déclarative (à adapter)
 _GOLDEN_FORMULA: Dict[str, Any] = {
     "method": "weighted_sum",
     "normalization": "none",
@@ -110,10 +103,7 @@ def weights() -> Dict[str, float]:
 
 
 def score_singleton(values: Dict[str, float]) -> float:
-    """
-    Score minimal: somme pondérée des dimensions présentes.
-    `values` attendu: {dimension_key: value}.
-    """
+    """Score minimal: moyenne pondérée des dimensions présentes."""
     w = weights()
     total_w = 0.0
     total = 0.0
@@ -125,10 +115,7 @@ def score_singleton(values: Dict[str, float]) -> float:
 
 
 def aggregate(scores: List[Dict[str, float]]) -> Dict[str, Any]:
-    """
-    Agrégation minimale sur une liste de dictionnaires de scores dimensionnels.
-    Retourne un dict: {"by_dim": {...}, "global": ...}
-    """
+    """Agrégation minimale sur une liste de scores dimensionnels."""
     if not scores:
         return {"by_dim": {}, "global": 0.0}
 
