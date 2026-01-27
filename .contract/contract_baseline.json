@@ -1,63 +1,61 @@
-name: Generate contract baseline (artifact only)
-
-on:
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-jobs:
-  baseline:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-
-      - name: Install deps
-        run: |
-          set -euo pipefail
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-
-      - name: Generate baseline
-        run: |
-          set -euo pipefail
-          mkdir -p .contract
-          python contract_probe.py \
-            --instrument ./phi_otimes_o_instrument_v0_1.py \
-            --out .contract/contract_baseline.json
-
-      - name: Validate baseline JSON + minimal keys
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import json
-
-          p = ".contract/contract_baseline.json"
-          with open(p, "r", encoding="utf-8") as f:
-              data = json.load(f)
-
-          if not isinstance(data, dict) or len(data) == 0:
-              raise SystemExit("❌ Baseline is empty dict ({}).")
-
-          required = ["contract_version", "compliance", "cli", "zones", "formula"]
-          missing = [k for k in required if k not in data]
-          if missing:
-              raise SystemExit(f"❌ Baseline missing keys: {missing}")
-
-          print("✅ Baseline OK:", p)
-          PY
-
-      - name: Upload baseline artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: contract-baseline
-          path: .contract/contract_baseline.json
-          if-no-files-found: error
+{
+  "contract_version": "1.5",
+  "instrument_path": "/home/runner/work/PhiO/PhiO/phi_otimes_o_instrument_v0_1.py",
+  "instrument_hash": "sha256:e1dde7d959de7d6dbf419ff64b73ac27fa44a3481725b3a0d31cb306d846b941",
+  "validation_timestamp": "2026-01-27T00:39:30.567540+00:00",
+  "compliance": {
+    "axes": {
+      "cli": "FULL",
+      "zones": "PARTIAL",
+      "formula": "MINIMAL"
+    },
+    "global": "MINIMAL",
+    "summary": "CLI:FULL/ZONES:PARTIAL/FORMULA:MINIMAL"
+  },
+  "summary": {
+    "cli_help_valid": true,
+    "zones_attempted": true,
+    "zones_count": 0,
+    "formula_checked": false,
+    "formula_pass": false
+  },
+  "cli": {
+    "help_valid": true,
+    "help_len": 1118,
+    "subcommands": [
+      "new-template",
+      "score"
+    ],
+    "flags": [
+      "--agg_tau",
+      "--agg_τ",
+      "--help",
+      "--input",
+      "--outdir"
+    ],
+    "required_subcommands": [
+      "new-template",
+      "score"
+    ],
+    "required_flags": [
+      "--input",
+      "--outdir"
+    ],
+    "tau_aliases": {
+      "has_tau_ascii": true,
+      "has_tau_unicode": true
+    }
+  },
+  "zones": {
+    "zones": {},
+    "constants": {},
+    "if_chain": [],
+    "attempted": true,
+    "method": "ast_failed",
+    "error": "extract_zone_thresholds_ast returned None"
+  },
+  "formula": {
+    "golden_attempted": false,
+    "golden_pass": false
+  }
+}
