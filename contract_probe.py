@@ -19,7 +19,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-# Réutilise la logique contractuelle déjà versionnée dans la suite
 from tests.contracts import run_help, extract_zone_thresholds_ast
 
 
@@ -32,7 +31,6 @@ def _sha256_file(path: Path) -> str:
 
 
 def extract_cli_contract(instrument_path: Path) -> Dict[str, Any]:
-    """Extrait un contrat CLI minimal à partir de --help."""
     cli: Dict[str, Any] = {
         "help_valid": False,
         "help_len": 0,
@@ -51,11 +49,8 @@ def extract_cli_contract(instrument_path: Path) -> Dict[str, Any]:
         return cli
 
     help_text = help_text or ""
-
-    # Sous-commandes (présence textuelle, volontairement simple)
     cli["subcommands"] = [s for s in cli["required_subcommands"] if s in help_text]
 
-    # Flags (présence textuelle)
     flags = []
     for f in ["--input", "--outdir", "--help", "--agg_tau", "--agg_τ"]:
         if f in help_text:
@@ -72,11 +67,8 @@ def extract_cli_contract(instrument_path: Path) -> Dict[str, Any]:
 def extract_zones_ast_only(instrument_path: Path) -> Dict[str, Any]:
     """
     Extraction *honnête* des zones (AST uniquement).
-
-    Objectif contractuel:
-    - ne jamais crasher (shape stable)
-    - capturer uniquement ce qui est réellement extractible depuis l'AST
-    - supporter plusieurs formats possibles renvoyés par tests/contracts.py
+    - Ne crashe jamais (shape stable).
+    - Supporte plusieurs formats de sortie de tests/contracts.py.
     """
     normalized: Dict[str, Any] = {
         "zones": {},
@@ -89,24 +81,23 @@ def extract_zones_ast_only(instrument_path: Path) -> Dict[str, Any]:
     try:
         raw = extract_zone_thresholds_ast(str(instrument_path))
 
-        # Guard 1: None
         if raw is None:
             normalized["method"] = "ast_failed"
             normalized["error"] = "extract_zone_thresholds_ast returned None"
             return normalized
 
-        # Guard 2: type inattendu
         if not isinstance(raw, dict):
             normalized["method"] = "ast_failed"
             normalized["error"] = f"extract_zone_thresholds_ast returned non-dict: {type(raw).__name__}"
             return normalized
 
-        # Format A (contractuel): {"constants": {...}, "if_chain": [...]}
+        # Format A (canon): {"constants": {...}, "if_chain": [...]}
         if isinstance(raw.get("constants"), dict) or isinstance(raw.get("if_chain"), list):
             normalized["constants"] = raw.get("constants") if isinstance(raw.get("constants"), dict) else {}
             normalized["if_chain"] = raw.get("if_chain") if isinstance(raw.get("if_chain"), list) else []
+            normalized["pattern"] = raw.get("pattern", "ast")
 
-        # Format B1 (heuristique): {"thresholds": [...], ...}
+        # Format B1: {"thresholds": [...], ...}
         elif isinstance(raw.get("thresholds"), (list, tuple)):
             ths = [
                 x for x in list(raw.get("thresholds"))
@@ -115,7 +106,7 @@ def extract_zones_ast_only(instrument_path: Path) -> Dict[str, Any]:
             normalized["constants"] = {f"THRESH_{i}": float(v) for i, v in enumerate(ths)}
             normalized["pattern"] = raw.get("pattern", "thresholds")
 
-        # Format B2 (heuristique): {"mapping": {...}, ...}
+        # Format B2: {"mapping": {...}, ...}
         elif isinstance(raw.get("mapping"), dict):
             mp = raw.get("mapping") if isinstance(raw.get("mapping"), dict) else {}
             normalized["constants"] = {
@@ -132,14 +123,14 @@ def extract_zones_ast_only(instrument_path: Path) -> Dict[str, Any]:
             )
             return normalized
 
-        # Flat "zones" = constants littéraux uniquement
+        # zones = constantes littérales
         flat: Dict[str, Any] = {}
         for k, v in (normalized.get("constants") or {}).items():
             if isinstance(v, (int, float, str)) and not isinstance(v, bool):
                 flat[k] = v
         normalized["zones"] = flat
 
-        # Conserver le reste des champs non conflictuels (diagnostic)
+        # Conserver champs diagnostics
         for k, v in raw.items():
             if k in ("zones", "constants", "if_chain", "attempted", "method", "error"):
                 continue
@@ -156,7 +147,6 @@ def extract_zones_ast_only(instrument_path: Path) -> Dict[str, Any]:
 def _run_score_once(
     instrument_path: Path, input_json: Dict[str, Any]
 ) -> Tuple[int, str, str, Optional[Dict[str, Any]]]:
-    """Exécute `score` et renvoie (rc, stdout, stderr, results_json)."""
     with tempfile.TemporaryDirectory() as td:
         td_path = Path(td)
         in_path = td_path / "input.json"
@@ -179,7 +169,6 @@ def _run_score_once(
 
 
 def check_formula_contract(instrument_path: Path) -> Dict[str, Any]:
-    """Vérifie la formule si possible, sans dépendre de la suite pytest."""
     info: Dict[str, Any] = {"golden_attempted": True, "golden_pass": False}
 
     with tempfile.TemporaryDirectory() as td:
@@ -197,8 +186,6 @@ def check_formula_contract(instrument_path: Path) -> Dict[str, Any]:
             return info
 
         template = json.loads(tpath.read_text(encoding="utf-8"))
-
-        # Forcer des scores connus (2) si possible
         for it in template.get("items", []):
             if "score" in it:
                 it["score"] = 2
@@ -235,7 +222,6 @@ def check_formula_contract(instrument_path: Path) -> Dict[str, Any]:
             t_expected = Cx + tau + G + D - k_eff_expected
 
             import math
-
             k_ok = math.isclose(float(results["K_eff"]), k_eff_expected, rel_tol=1e-5, abs_tol=1e-8)
             t_ok = math.isclose(float(results["T"]), t_expected, rel_tol=1e-5, abs_tol=1e-8)
 
@@ -250,11 +236,7 @@ def check_formula_contract(instrument_path: Path) -> Dict[str, Any]:
     return info
 
 
-def calculate_compliance_levels(
-    cli_info: Dict[str, Any], zones_info: Dict[str, Any], formula_info: Dict[str, Any]
-) -> Dict[str, Any]:
-    """Niveaux de conformité multi-axes (CLI / zones / formule)."""
-
+def calculate_compliance_levels(cli_info: Dict[str, Any], zones_info: Dict[str, Any], formula_info: Dict[str, Any]) -> Dict[str, Any]:
     def assess_level(full: bool, partial: bool) -> str:
         if full:
             return "FULL"
@@ -262,7 +244,6 @@ def calculate_compliance_levels(
             return "PARTIAL"
         return "MINIMAL"
 
-    # CLI
     cli_full = bool(
         cli_info.get("help_valid", False)
         and len(cli_info.get("subcommands", [])) >= 2
@@ -271,14 +252,12 @@ def calculate_compliance_levels(
     cli_partial = bool(cli_info.get("help_valid", False))
     cli_level = assess_level(cli_full, cli_partial)
 
-    # Zones
     zones = zones_info.get("zones") or {}
     literal_zones = {k: v for k, v in zones.items() if isinstance(v, (int, float, str)) and not isinstance(v, bool)}
     zones_full = len(literal_zones) > 0
     zones_partial = bool(zones_info.get("attempted", False))
     zones_level = assess_level(zones_full, zones_partial)
 
-    # Formule
     formula_full = bool(formula_info.get("golden_pass", False))
     formula_partial = bool(formula_info.get("golden_attempted", False))
     formula_level = assess_level(formula_full, formula_partial)
@@ -308,9 +287,7 @@ def generate_contract_report(instrument_path: Path, check_formula: bool) -> Dict
         "summary": {
             "cli_help_valid": cli.get("help_valid", False),
             "zones_attempted": zones.get("attempted", False),
-            "zones_count": len(
-                [k for k, v in (zones.get("zones") or {}).items() if isinstance(v, (int, float, str)) and not isinstance(v, bool)]
-            ),
+            "zones_count": len([k for k, v in (zones.get("zones") or {}).items() if isinstance(v, (int, float, str)) and not isinstance(v, bool)]),
             "formula_checked": bool(check_formula),
             "formula_pass": bool(formula.get("golden_pass", False)) if check_formula else False,
         },

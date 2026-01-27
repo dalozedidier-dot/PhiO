@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Validation contractuelle: la catégorie ContractWarning doit pouvoir être escaladée en exception.
-# Le test est *positif* si une exception ContractWarning est levée quand on force le filtre.
 python3 - <<'PY'
 import warnings
 from contract_warnings import ContractWarning
