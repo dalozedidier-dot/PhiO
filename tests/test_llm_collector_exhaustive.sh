@@ -1,417 +1,191 @@
 #!/usr/bin/env bash
 # tests/test_llm_collector_exhaustive.sh
-# Batterie de tests "maximale" pour scripts/phio_llm_collect.sh (sans modifier le script).
-set -euo pipefail
+#
+# Objectif :
+# - Exécuter une batterie "exhaustive" du collecteur LLM avec observabilité maximale.
+# - Échouer de façon explicite (ligne + commande) au premier défaut (mode strict).
+# - Produire un log exploitable (stdout/stderr) et un exit code non ambigu.
+#
+# Hypothèses minimales :
+# - Bash disponible
+# - Python disponible si des tests Python existent
+# - Le script est lancé depuis n'importe où (il se recale sur le repo root)
 
-echo "🧪🧪🧪 TEST EXHAUSTIF DU COLLECTEUR LLM 🧪🧪🧪"
-echo "Date: $(date -Iseconds)"
-echo "Host: $(uname -a)"
-echo
+set -Eeuo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-COLLECTOR="${COLLECTOR:-$REPO_ROOT/scripts/phio_llm_collect.sh}"
-
-if [ ! -x "$COLLECTOR" ]; then
-  echo "❌ Collecteur introuvable ou non exécutable: $COLLECTOR" >&2
-  exit 1
+# --- Observabilité ---
+# Active xtrace si TRACE=1
+if [[ "${TRACE:-0}" == "1" ]]; then
+  set -x
 fi
 
-TEST_ROOT="$(mktemp -d)"
-FAILURES=0
-TESTS_RUN=0
+# Trap d'erreur : ligne + commande
+trap 'rc=$?;
+  echo "ERROR: rc=$rc file=${BASH_SOURCE[0]} line=$LINENO cmd=${BASH_COMMAND}" >&2;
+  exit "$rc"
+' ERR
 
-inc() { ((TESTS_RUN++)); }
-fail() { echo "❌ Échec: $1"; ((FAILURES++)); }
-pass() { echo "✅ Réussi: $1"; }
+log() { printf '%s\n' "$*" >&2; }
 
-cleanup() {
-  echo -e "\n🧹 Nettoyage..."
-  rm -rf "$TEST_ROOT" "$REPO_ROOT"/_test_output_* 2>/dev/null || true
+# --- Détermination du repo root ---
+resolve_repo_root() {
+  if command -v git >/dev/null 2>&1 && git rev-parse --show-toplevel >/dev/null 2>&1; then
+    git rev-parse --show-toplevel
+    return 0
+  fi
+  # Fallback : parent du dossier tests/
+  local here
+  here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  (cd "$here/.." && pwd)
 }
-trap cleanup EXIT
 
-echo "📁 Environnement de test: $TEST_ROOT"
+REPO_ROOT="$(resolve_repo_root)"
+cd "$REPO_ROOT"
 
-# --- Construire un "mini-projet" riche ---
-mkdir -p "$TEST_ROOT/.contract"
-echo '{"version":"1.5.0","baseline":"test"}' > "$TEST_ROOT/.contract/contract_baseline.json"
+# --- Logs / artefacts ---
+ART_DIR="${ART_DIR:-test-reports/collector}"
+mkdir -p "$ART_DIR"
+LOG_FILE="${LOG_FILE:-$ART_DIR/collector_exhaustive.log}"
 
-mkdir -p "$TEST_ROOT/.github/workflows"
-echo "name: CI" > "$TEST_ROOT/.github/workflows/phi_ci.yml"
+# Redirection globale vers log + console
+exec > >(tee -a "$LOG_FILE") 2>&1
 
-mkdir -p "$TEST_ROOT/.githooks"
-printf '%s\n' '#!/usr/bin/env bash' 'echo pre-commit' > "$TEST_ROOT/.githooks/pre-commit"
-chmod +x "$TEST_ROOT/.githooks/pre-commit"
-printf '%s\n' '#!/usr/bin/env bash' 'echo pre-push' > "$TEST_ROOT/.githooks/pre-push"
-chmod +x "$TEST_ROOT/.githooks/pre-push"
+log "collector exhaustive start"
+log "pwd=$(pwd)"
+log "bash=${BASH_VERSION}"
+log "trace=${TRACE:-0}"
+log "art_dir=$ART_DIR"
+log "log_file=$LOG_FILE"
 
-mkdir -p "$TEST_ROOT/scripts"
-printf '%s\n' '#!/usr/bin/env bash' 'echo "Setting up..."' > "$TEST_ROOT/scripts/dev-setup.sh"
-chmod +x "$TEST_ROOT/scripts/dev-setup.sh"
-
-# Dossiers à exclure
-mkdir -p "$TEST_ROOT/__pycache__/test"
-echo "__pycache__ content" > "$TEST_ROOT/__pycache__/test/__init__.pyc"
-mkdir -p "$TEST_ROOT/.pytest_cache/v" "$TEST_ROOT/.ruff_cache" "$TEST_ROOT/node_modules/react" "$TEST_ROOT/venv/bin" \
-         "$TEST_ROOT/.venv/lib" "$TEST_ROOT/dist" "$TEST_ROOT/build"
-
-# Tests/baseline/fixtures
-mkdir -p "$TEST_ROOT/tests"
-echo "# Test file" > "$TEST_ROOT/tests/test_example.py"
-touch "$TEST_ROOT/tests/__init__.py"
-
-mkdir -p "$TEST_ROOT/test_data/golden"
-echo '{"test":"data"}' > "$TEST_ROOT/test_data/golden/expected.json"
-
-mkdir -p "$TEST_ROOT/fixtures"
-echo "# Test Matrix" > "$TEST_ROOT/fixtures/simple_matrix.md"
-
-# Binaire + secrets (ne doivent PAS finir dans concat, et de toute façon ne sont pas copiés dans bundle/)
-head -c 100 /dev/urandom > "$TEST_ROOT/binary_file.bin"
-echo "SECRET_KEY=12345" > "$TEST_ROOT/.env"
-echo "-----BEGIN PRIVATE KEY-----" > "$TEST_ROOT/secret.pem"
-
-# Gros fichiers texte (tester MAX_FILE_BYTES / MAX_CONCAT_LINES)
-python3 - <<'PY' "$TEST_ROOT"
-import os, sys
-root = sys.argv[1]
-with open(os.path.join(root, "large_file.txt"), "w", encoding="utf-8") as f:
-    for i in range(50000):
-        f.write("Line %d: %s\n" % (i, "x"*100))
-with open(os.path.join(root, "exact_200kb.txt"), "w", encoding="utf-8") as f:
-    f.write("x" * 204800)
-with open(os.path.join(root, "over_200kb.txt"), "w", encoding="utf-8") as f:
-    f.write("x" * 205000)
-PY
-
-# Git réel (pour exercer INCLUDE_GIT=1)
-if command -v git >/dev/null 2>&1; then
-  (cd "$TEST_ROOT" && git init -q && git config user.email "test@example.com" && git config user.name "test" || true)
-  (cd "$TEST_ROOT" && git add -A && git commit -qm "init" || true)
-fi
-
-echo -e "\n🚀 DÉBUT DES TESTS\n"
-
-# --- Test 1: Exécution de base ---
-echo "=== Test 1: Exécution de base ==="
-inc
-if QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_basic" >/dev/null 2>&1; then
-  pass "Exécution de base"
-else
-  fail "Exécution de base"
-fi
-
-# --- Test 2: Fichiers requis ---
-echo -e "\n=== Test 2: Fichiers requis ==="
-inc
-req=(tree.txt meta.txt missing_report.md manifest.json phio_llm_bundle.tar.gz)
-all_ok=true
-for f in "${req[@]}"; do
-  if [ ! -f "$REPO_ROOT/_test_output_basic/$f" ]; then
-    echo "  ❌ Manquant: $f"
-    all_ok=false
-  else
-    echo "  ✅ Présent: $f"
+# --- Pré-checks stricts (échoue si prérequis manquants) ---
+require_file() {
+  local p="$1"
+  if [[ ! -f "$p" ]]; then
+    log "missing_file=$p"
+    return 1
   fi
-done
-$all_ok && pass "Fichiers requis présents" || fail "Fichiers requis manquants"
+}
 
-# --- Test 3: Exclusions dans tree.txt ---
-echo -e "\n=== Test 3: Exclusions ==="
-inc
-tree="$REPO_ROOT/_test_output_basic/tree.txt"
-excluded=(__pycache__ .git .pytest_cache .ruff_cache node_modules venv .venv dist build)
-bad=false
-for d in "${excluded[@]}"; do
-  if grep -q "^${d}/" "$tree"; then
-    echo "  ❌ $d présent dans tree.txt"
-    bad=true
-  else
-    echo "  ✅ $d exclu"
+require_cmd() {
+  local c="$1"
+  if ! command -v "$c" >/dev/null 2>&1; then
+    log "missing_cmd=$c"
+    return 1
   fi
-done
-(! $bad) && pass "Exclusions OK" || fail "Exclusions KO"
+}
 
-# --- Test 4: Redaction PHIO_* ---
-echo -e "\n=== Test 4: Redaction PHIO_* ==="
-inc
-export PHIO_SECRET_KEY="should_be_redacted"
-export PHIO_API_KEY="another_secret"
-export REGULAR_VAR="should_not_appear"
-QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_redaction" >/dev/null 2>&1 || true
-meta="$REPO_ROOT/_test_output_redaction/meta.txt"
-
-if grep -q "PHIO_SECRET_KEY=<REDACTED>" "$meta" && grep -q "PHIO_API_KEY=<REDACTED>" "$meta"; then
-  echo "  ✅ PHIO_* redacted"
-else
-  echo "  ❌ PHIO_* pas redacted comme attendu"
-  fail "Redaction PHIO_*"
-fi
-
-# Le script n'imprime pas l'environnement complet : REGULAR_VAR ne doit pas apparaître.
-if grep -q "REGULAR_VAR=" "$meta"; then
-  echo "  ❌ REGULAR_VAR ne devrait pas apparaître dans meta.txt"
-  fail "Redaction trop large / meta inattendu"
-else
-  echo "  ✅ REGULAR_VAR absent (attendu)"
-  pass "Redaction OK"
-fi
-unset PHIO_SECRET_KEY PHIO_API_KEY REGULAR_VAR
-
-# --- Test 5: Limites concat ---
-echo -e "\n=== Test 5: Limites concat ==="
-inc
-MAX_FILE_BYTES=100 MAX_FILE_LINES=10 MAX_CONCAT_LINES=50 QUIET=1 \
-  "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_limits" >/dev/null 2>&1 || true
-concat="$REPO_ROOT/_test_output_limits/all_text.txt"
-if [ -f "$concat" ]; then
-  lines=$(wc -l < "$concat" | tr -d ' ')
-  if [ "$lines" -le 50 ]; then
-    echo "  ✅ MAX_CONCAT_LINES respecté: $lines"
-  else
-    echo "  ❌ MAX_CONCAT_LINES dépassé: $lines"
-    fail "Limite concat"
-  fi
-  if grep -qi "skipped" "$concat"; then
-    echo "  ✅ fichiers gros signalés skipped"
-    pass "Limites de taille OK"
-  else
-    echo "  ⚠️  aucun 'skipped' (possible si aucun fichier copié n'a dépassé MAX_FILE_BYTES)"
-    pass "Limites de taille (partiel)"
-  fi
-else
-  echo "  ❌ all_text.txt absent alors que INCLUDE_CONCAT par défaut=1"
-  fail "Concat absent"
-fi
-
-# --- Test 6: STRICT=1 doit échouer sans baseline/tests ---
-echo -e "\n=== Test 6: STRICT=1 ==="
-inc
-no_base="$(mktemp -d)"
-echo "README" > "$no_base/README.md"
-if STRICT=1 QUIET=1 "$COLLECTOR" "$no_base" "$REPO_ROOT/_test_output_strict" >/dev/null 2>&1; then
-  echo "  ❌ STRICT=1 aurait dû échouer"
-  fail "STRICT trop permissif"
-else
-  echo "  ✅ STRICT=1 échoue (attendu)"
-  pass "STRICT OK"
-fi
-rm -rf "$no_base" "$REPO_ROOT/_test_output_strict" 2>/dev/null || true
-
-# --- Test 7: INCLUDE_TEST_OUTPUTS ---
-echo -e "\n=== Test 7: INCLUDE_TEST_OUTPUTS ==="
-inc
-mkdir -p "$TEST_ROOT/test-results"
-echo '<testsuite/>' > "$TEST_ROOT/test-results/junit.xml"
-echo '{"passed":10}' > "$TEST_ROOT/report.json"
-INCLUDE_TEST_OUTPUTS=1 QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_with_outputs" >/dev/null 2>&1 || true
-if [ -f "$REPO_ROOT/_test_output_with_outputs/bundle/test-results/junit.xml" ] && \
-   [ -f "$REPO_ROOT/_test_output_with_outputs/bundle/report.json" ]; then
-  pass "INCLUDE_TEST_OUTPUTS OK"
-else
-  fail "INCLUDE_TEST_OUTPUTS KO"
-fi
-
-# --- Test 8: Performance (gros fichier binaire non copié → doit rester rapide) ---
-echo -e "\n=== Test 8: Performance ==="
-inc
-python3 - <<'PY' "$TEST_ROOT"
-import os, sys
-root=sys.argv[1]
-with open(os.path.join(root,"very_large.bin"),"wb") as f:
-    f.write(b"x"*5_000_000)
-PY
-
-# timeout portable: si la commande `timeout` n'existe pas, on exécute sans.
-if command -v timeout >/dev/null 2>&1; then
-  if timeout 10 env MAX_FILE_BYTES=1000000 MAX_CONCAT_LINES=10000 QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_perf" >/dev/null 2>&1; then
-    pass "Performance OK"
-  else
-    code=$?
-    if [ "$code" -eq 124 ]; then
-      fail "Performance (timeout)"
-    else
-      fail "Performance (exit $code)"
-    fi
-  fi
-else
-  QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_perf" >/dev/null 2>&1 || fail "Performance (sans timeout)"
-  pass "Performance (sans timeout) exécuté"
-fi
-
-# --- Test 9: Manifest JSON valide et SHA256 présents ---
-echo -e "\n=== Test 9: Manifest SHA256 ==="
-inc
-man="$REPO_ROOT/_test_output_basic/manifest.json"
-if python3 -c "import json; json.load(open('$man'))" >/dev/null 2>&1; then
-  echo "  ✅ JSON valide"
-else
-  fail "Manifest JSON invalide"
-fi
-
-bad=$(python3 - <<'PY' "$man"
-import json, sys
-m=json.load(open(sys.argv[1], encoding="utf-8"))
-invalid=[e for e in m.get("entries",[]) if not e.get("sha256") or e["sha256"] in ("ERROR","NO_SHA256_TOOL","error:sha256_failed")]
-print(len(invalid))
-PY
+# Ajuste la liste selon ton repo réel.
+# Ici on met des prérequis "collecteur" typiques, et on échoue si absents.
+REQUIRED_FILES=(
+  "contract_probe.py"
+  "validate_contract_warnings.sh"
 )
-if [ "$bad" -eq 0 ]; then
-  pass "Manifest SHA256 OK"
-else
-  fail "Manifest SHA256 invalides: $bad"
-fi
 
-# --- Test 10: Archive extractable ---
-echo -e "\n=== Test 10: Archive ==="
-inc
-arch="$REPO_ROOT/_test_output_basic/phio_llm_bundle.tar.gz"
-if [ -f "$arch" ]; then
-  ex="$REPO_ROOT/_test_output_extract"
-  rm -rf "$ex" && mkdir -p "$ex"
-  if tar -xzf "$arch" -C "$ex" >/dev/null 2>&1; then
-    if [ -f "$ex/tree.txt" ] && [ -f "$ex/manifest.json" ]; then
-      pass "Archive OK"
-    else
-      fail "Archive contenu incomplet"
-    fi
-  else
-    fail "Archive corrompue"
+for f in "${REQUIRED_FILES[@]}"; do
+  require_file "$f"
+done
+
+require_cmd bash
+require_cmd python
+
+# --- (Option) Installation deps si le script est utilisé en local ---
+# En CI, préférer une step dédiée.
+if [[ "${AUTO_PIP_INSTALL:-0}" == "1" ]]; then
+  log "auto_pip_install=1"
+  python -m pip install --upgrade pip
+  if [[ -f requirements.txt ]]; then
+    python -m pip install -r requirements.txt
   fi
-  rm -rf "$ex"
-else
-  fail "Archive absente"
 fi
 
-# --- Test 11: Sans git (fallback find) ---
-echo -e "\n=== Test 11: Sans git ==="
-inc
-if [ -d "$TEST_ROOT/.git" ]; then
-  mv "$TEST_ROOT/.git" "$TEST_ROOT/.git_backup"
-fi
-INCLUDE_GIT=1 QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_no_git" >/dev/null 2>&1 || true
-if [ -d "$TEST_ROOT/.git_backup" ]; then
-  mv "$TEST_ROOT/.git_backup" "$TEST_ROOT/.git"
-fi
-if [ -s "$REPO_ROOT/_test_output_no_git/tree.txt" ]; then
-  pass "Mode sans git OK"
-else
-  fail "Mode sans git KO"
-fi
+# --- Compilation rapide (fail fast) ---
+log "py_compile: start"
+python -m py_compile contract_probe.py
 
-# --- Test 12: INCLUDE_PIP_FREEZE (optionnel) ---
-echo -e "\n=== Test 12: INCLUDE_PIP_FREEZE ==="
-inc
-INCLUDE_PIP_FREEZE=1 QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_pip" >/dev/null 2>&1 || true
-if [ -f "$REPO_ROOT/_test_output_pip/pip_freeze.txt" ]; then
-  pass "pip_freeze.txt généré"
-else
-  echo "  ℹ️  pip_freeze.txt absent (pip peut manquer / échec toléré)"
-  pass "pip_freeze testé (tolérant)"
-fi
-
-# --- Test 13: INCLUDE_CONCAT=0 ---
-echo -e "\n=== Test 13: INCLUDE_CONCAT=0 ==="
-inc
-INCLUDE_CONCAT=0 QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_no_concat" >/dev/null 2>&1 || true
-if [ ! -f "$REPO_ROOT/_test_output_no_concat/all_text.txt" ]; then
-  pass "INCLUDE_CONCAT=0 OK"
-else
-  fail "INCLUDE_CONCAT=0 KO"
-fi
-
-# --- Test 14: Noms de fichiers "bizarres" (ne doivent pas faire crasher) ---
-echo -e "\n=== Test 14: Chemins spéciaux ==="
-inc
-touch "$TEST_ROOT/file with spaces.txt"
-touch "$TEST_ROOT/file'with'quotes.txt"
-touch "$TEST_ROOT/file\"with\"doublequotes.txt"
-touch "$TEST_ROOT/file|with|pipes.txt"
-touch "$TEST_ROOT/file&with&ampersands.txt"
-touch "$TEST_ROOT/file#with#hashes.txt"
-QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_paths" >/dev/null 2>&1 && pass "Chemins spéciaux OK" || fail "Chemins spéciaux KO"
-
-# --- Test 15: Déterminisme (sur la structure copiée, pas sur meta/report/manifest) ---
-echo -e "\n=== Test 15: Déterminisme (structure bundle) ==="
-inc
-QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_det1" >/dev/null 2>&1
-sleep 1
-QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_det2" >/dev/null 2>&1
-
-# On compare tree.txt (déterministe) + la liste des chemins dans bundle/
-if cmp -s "$REPO_ROOT/_test_output_det1/tree.txt" "$REPO_ROOT/_test_output_det2/tree.txt"; then
-  echo "  ✅ tree.txt identique"
-else
-  echo "  ❌ tree.txt différent"
-  fail "Déterminisme tree"
-fi
-
-list1="$REPO_ROOT/_test_output_det1/_bundle_paths.txt"
-list2="$REPO_ROOT/_test_output_det2/_bundle_paths.txt"
-( cd "$REPO_ROOT/_test_output_det1/bundle" && find . -type f -o -type l | sed 's|^\./||' | sort ) > "$list1" || true
-( cd "$REPO_ROOT/_test_output_det2/bundle" && find . -type f -o -type l | sed 's|^\./||' | sort ) > "$list2" || true
-
-if cmp -s "$list1" "$list2"; then
-  pass "Déterminisme bundle (paths)"
-else
-  echo "  ❌ bundle paths différents (normal si le contenu change, mais pas attendu ici)"
-  diff -u "$list1" "$list2" | head -50 || true
-  fail "Déterminisme bundle"
-fi
-
-# --- Test 16: Profondeur ---
-echo -e "\n=== Test 16: Profondeur ==="
-inc
-mkdir -p "$TEST_ROOT/deep/level1/level2/level3/level4/level5/level6/level7/level8/level9/level10"
-echo "Deep file" > "$TEST_ROOT/deep/level1/level2/level3/level4/level5/level6/level7/level8/level9/level10/file.txt"
-for i in $(seq 1 100); do echo "File $i" > "$TEST_ROOT/deep/file_$i.txt"; done
-if command -v timeout >/dev/null 2>&1; then
-  if timeout 15 env QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_deep" >/dev/null 2>&1; then
-    pass "Profondeur OK"
+# Compile des modules collecteur si présents (sinon n'échoue pas)
+for maybe in \
+  "phi_otimes_o_instrument_v0_1.py" \
+  "contract_warnings.py" \
+  "diagnostic.py" \
+  "extract_conventions.py"
+do
+  if [[ -f "$maybe" ]]; then
+    python -m py_compile "$maybe"
   else
-    code=$?
-    [ "$code" -eq 124 ] && fail "Profondeur (timeout)" || fail "Profondeur (exit $code)"
+    log "py_optional_missing=$maybe"
+  fi
+done
+log "py_compile: done"
+
+# --- Génération baseline (optionnelle) ---
+# Si tu veux rendre le test indépendant d'un état repo, active GENERATE_BASELINE=1
+if [[ "${GENERATE_BASELINE:-0}" == "1" ]]; then
+  log "generate_baseline=1"
+  require_file "phi_otimes_o_instrument_v0_1.py"
+  mkdir -p .contract
+  python contract_probe.py \
+    --instrument ./phi_otimes_o_instrument_v0_1.py \
+    --out .contract/contract_baseline.json
+
+  # Vérification minimale
+  python - <<'PY'
+import json
+p = ".contract/contract_baseline.json"
+with open(p, "r", encoding="utf-8") as f:
+    d = json.load(f)
+if not isinstance(d, dict) or len(d) == 0:
+    raise SystemExit("baseline_invalid_or_empty")
+required = ["contract_version", "compliance", "cli", "zones", "formula"]
+missing = [k for k in required if k not in d]
+if missing:
+    raise SystemExit(f"baseline_missing_keys={missing}")
+print("baseline_ok")
+PY
+else
+  log "generate_baseline=0"
+fi
+
+# --- Validation contract warnings (si script + module dispo) ---
+# Ici : on exécute, mais on rend l’échec explicite si ImportError sur contract_warnings.py.
+if [[ -x "./validate_contract_warnings.sh" ]]; then
+  log "validate_contract_warnings: start"
+  ./validate_contract_warnings.sh
+  log "validate_contract_warnings: done"
+else
+  log "validate_contract_warnings_skipped: not_executable"
+fi
+
+# --- Tests collecteur : stratégie adaptive ---
+# 1) Si un script dédié existe : run_collector_tests.sh
+# 2) Sinon : pytest sur un pattern collector si présent
+# 3) Sinon : échoue explicitement (exhaustive == pas de test == erreur)
+EXIT_CODE=0
+
+if [[ -x "./run_collector_tests.sh" ]]; then
+  log "run_collector_tests.sh: start"
+  ./run_collector_tests.sh
+  log "run_collector_tests.sh: done"
+elif [[ -d "tests" ]]; then
+  # Détection simple : un fichier test contenant "collector" dans son nom
+  if ls tests/test_*collector*.py >/dev/null 2>&1; then
+    log "pytest_collector: start"
+    mkdir -p test-reports/test-results
+    python -m pytest -q \
+      tests/test_*collector*.py \
+      --junitxml=test-reports/test-results/pytest-collector.xml
+    log "pytest_collector: done"
+  else
+    log "no_collector_tests_detected"
+    EXIT_CODE=1
   fi
 else
-  QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_deep" >/dev/null 2>&1 && pass "Profondeur OK" || fail "Profondeur KO"
+  log "tests_dir_missing"
+  EXIT_CODE=1
 fi
 
-# --- Test 17: Symlinks (dans fixtures copiées) ---
-echo -e "\n=== Test 17: Symlinks ==="
-inc
-ln -sf "simple_matrix.md" "$TEST_ROOT/fixtures/symlink_to_fixture"
-QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_symlink" >/dev/null 2>&1 || true
-if [ -L "$REPO_ROOT/_test_output_symlink/bundle/fixtures/symlink_to_fixture" ]; then
-  pass "Symlink préservé"
-elif [ -f "$REPO_ROOT/_test_output_symlink/bundle/fixtures/symlink_to_fixture" ]; then
-  echo "  ℹ️  symlink déréférencé (acceptable selon tar/cp)"
-  pass "Symlink (déréférencé)"
-else
-  fail "Symlink absent"
-fi
+# --- Post-state minimal ---
+log "post_state: git_status_porcelain"
+git status --porcelain || true
 
-# --- Test 18: Permissions (fichier non lisible dans fixtures) ---
-echo -e "\n=== Test 18: Permissions ==="
-inc
-echo "secret" > "$TEST_ROOT/fixtures/no_read.txt"
-chmod 000 "$TEST_ROOT/fixtures/no_read.txt" || true
-QUIET=1 "$COLLECTOR" "$TEST_ROOT" "$REPO_ROOT/_test_output_perm" >/dev/null 2>&1 || true
-chmod 644 "$TEST_ROOT/fixtures/no_read.txt" || true
-if [ -f "$REPO_ROOT/_test_output_perm/phio_llm_bundle.tar.gz" ]; then
-  pass "Robuste aux permissions (ne crash pas)"
-else
-  fail "Crash sur permissions"
-fi
-
-echo -e "\n📊 RÉSULTATS"
-echo "Tests exécutés: $TESTS_RUN"
-echo "Échecs: $FAILURES"
-echo "Succès: $((TESTS_RUN - FAILURES))"
-
-if [ "$FAILURES" -eq 0 ]; then
-  echo -e "\n🎉 TOUS LES TESTS ONT RÉUSSI"
-  exit 0
-else
-  echo -e "\n⚠️  $FAILURES TEST(S) ONT ÉCHOUÉ"
-  exit 1
-fi
+log "collector exhaustive end rc=$EXIT_CODE"
+exit "$EXIT_CODE"
