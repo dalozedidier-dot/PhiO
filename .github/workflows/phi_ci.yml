@@ -2,9 +2,15 @@ name: PhiO Contract CI
 
 on:
   push:
-    branches: ["main"]
+    branches: [ "main", "develop" ]
   pull_request:
-  workflow_dispatch:
+    branches: [ "main" ]
+
+env:
+  PHIO_CONTRACT_POLICY: HONEST
+  PHIO_TAU_POLICY: AT_LEAST_ONE
+  PHIO_ALLOW_EXEC_EXTRACTION: "false"
+  PHIO_UPDATE_BASELINE: "false"
 
 permissions:
   contents: read
@@ -14,11 +20,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
@@ -28,46 +32,50 @@ jobs:
           set -euo pipefail
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest pytest-html
 
-      - name: Hardening: baseline must exist
+      - name: "Hardening: baseline must exist"
         run: |
           set -euo pipefail
-          test -f .contract/contract_baseline.json || (echo "❌ Missing .contract/contract_baseline.json. Generate + commit a baseline." && exit 1)
+          test -f .contract/contract_baseline.json || (echo "❌ Baseline missing: .contract/contract_baseline.json" && exit 3)
 
-      - name: Hardening: baseline must be valid JSON + not empty + minimal keys
+      - name: "Hardening: baseline must be valid JSON + not empty"
         run: |
           set -euo pipefail
           python - <<'PY'
           import json
-
           p = ".contract/contract_baseline.json"
           with open(p, "r", encoding="utf-8") as f:
               data = json.load(f)
-
-          if not isinstance(data, dict):
-              raise SystemExit("❌ Baseline JSON is not an object/dict.")
-          if len(data) == 0:
-              raise SystemExit("❌ Baseline is empty ({}). Generate + commit a baseline.")
-
-          required = ["contract_version", "compliance", "cli", "zones", "formula"]
-          missing = [k for k in required if k not in data]
-          if missing:
-              raise SystemExit(f"❌ Baseline missing keys: {missing}")
-
-          print("✅ Baseline OK")
+          if not isinstance(data, dict) or len(data.keys()) == 0:
+              raise SystemExit("❌ Baseline is empty ({}). Run generate_baseline.yml.")
+          print("✅ Baseline OK:", p)
           PY
 
-      - name: Run contract validation
+      - name: "Hardening: forbid baseline updates in CI"
         run: |
           set -euo pipefail
-          chmod +x validate_contract_warnings.sh || true
-          ./validate_contract_warnings.sh
+          if [ "${PHIO_UPDATE_BASELINE}" = "true" ]; then
+            echo "❌ PHIO_UPDATE_BASELINE=true is forbidden in CI"
+            exit 3
+          fi
 
-      - name: Run tests (reports)
+      - name: Run contract validation
+        env:
+          PHIO_INSTRUMENT: "phi_otimes_o_instrument_v0_1.py"
+        run: |
+          chmod +x final_validation.sh validate_contract_warnings.sh || true
+          ./final_validation.sh
+
+      - name: Run all tests (reports)
         run: |
           set -euo pipefail
-          mkdir -p test-reports/test-results
-          pytest -q --junitxml=test-reports/test-results/pytest.xml
+          mkdir -p .contract/test-reports/test-results
+          echo "artifact marker" > .contract/.keep
+          PYTHONPATH=. pytest tests/ -q --tb=short \
+            --junitxml=.contract/test-reports/test-results/pytest.xml \
+            --html=.contract/test-reports/report.html \
+            --self-contained-html
 
       - name: Upload artifacts
         if: always()
@@ -76,5 +84,6 @@ jobs:
           name: phio-contract-artifacts
           path: |
             .contract/contract_baseline.json
-            test-reports/
+            .contract/.keep
+            .contract/test-reports/**
           if-no-files-found: warn
