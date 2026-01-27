@@ -3,48 +3,124 @@ name: Test Exhaustif du Collecteur LLM
 on:
   push:
     paths:
-      - 'scripts/phio_llm_collect.sh'
-      - 'tests/test_llm_collector_*.sh'
-      - 'tests/test_cross_validation.sh'
-      - 'run_collector_tests.sh'
+      - "scripts/phio_llm_collect.sh"
+      - "tests/test_llm_collector_*.sh"
+      - "tests/test_cross_validation.sh"
+      - "run_collector_tests.sh"
+      - "tests/test_llm_collector_exhaustive.sh"
+      - ".github/workflows/collector_tests.yml"
   pull_request:
     paths:
-      - 'scripts/phio_llm_collect.sh'
-      - 'tests/test_llm_collector_*.sh'
-      - 'tests/test_cross_validation.sh'
-      - 'run_collector_tests.sh'
+      - "scripts/phio_llm_collect.sh"
+      - "tests/test_llm_collector_*.sh"
+      - "tests/test_cross_validation.sh"
+      - "run_collector_tests.sh"
+      - "tests/test_llm_collector_exhaustive.sh"
+      - ".github/workflows/collector_tests.yml"
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   collector-tests:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    timeout-minutes: 25
 
-      - name: "Debug + fix collector executable"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Python deps (if requirements.txt)
         shell: bash
         run: |
-          set -euo pipefail
-          echo "PWD=$(pwd)"
-          echo "LS scripts:"
-          ls -la scripts || true
-          echo "EXISTS?"; test -e scripts/phio_llm_collect.sh && echo YES || echo NO
-          echo "EXEC?";   test -x scripts/phio_llm_collect.sh && echo YES || echo NO
-          if test -e scripts/phio_llm_collect.sh; then
-            chmod +x scripts/phio_llm_collect.sh
-            echo "After chmod: EXEC?"; test -x scripts/phio_llm_collect.sh && echo YES || echo NO
+          set -Eeuo pipefail
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            echo "No requirements.txt found; skipping pip install."
           fi
 
-
-      - name: Ensure executable bits
+      - name: Debug repo layout
+        shell: bash
         run: |
-          chmod +x scripts/phio_llm_collect.sh
+          set -Eeuo pipefail
+          echo "PWD=$(pwd)"
+          echo "Root:"
+          ls -la
+          echo "scripts:"
+          ls -la scripts || true
+          echo "tests:"
+          ls -la tests || true
+          echo "workflows:"
+          ls -la .github/workflows || true
+
+      - name: Ensure executable bits (defensive)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          chmod +x scripts/phio_llm_collect.sh || true
           chmod +x run_collector_tests.sh || true
-          chmod +x tests/test_llm_collector_exhaustive.sh tests/test_llm_collector_stress.sh tests/test_cross_validation.sh || true
+          chmod +x tests/test_llm_collector_exhaustive.sh || true
+          chmod +x tests/test_llm_collector_stress.sh || true
+          chmod +x tests/test_cross_validation.sh || true
+          chmod +x validate_contract_warnings.sh || true
 
-      - name: Run suite
+          echo "EXEC? scripts/phio_llm_collect.sh: $(test -x scripts/phio_llm_collect.sh && echo YES || echo NO)"
+          echo "EXEC? run_collector_tests.sh:      $(test -x run_collector_tests.sh && echo YES || echo NO)"
+          echo "EXEC? exhaustive:                 $(test -x tests/test_llm_collector_exhaustive.sh && echo YES || echo NO)"
+          echo "EXEC? validate_contract_warnings: $(test -x validate_contract_warnings.sh && echo YES || echo NO)"
+
+      - name: Reset any local modifications (CI clean state)
+        # Par défaut: ON. Mets ENABLE_CI_RESET=0 pour désactiver.
+        shell: bash
+        env:
+          ENABLE_CI_RESET: "1"
         run: |
-          ./run_collector_tests.sh
+          set -Eeuo pipefail
+          if [ "${ENABLE_CI_RESET}" = "1" ]; then
+            echo "CI reset enabled: cleaning workspace"
+            git checkout -- . || true
+            git clean -fd || true
+          else
+            echo "CI reset disabled"
+          fi
+
+      - name: Run suite (verbose + capture log)
+        shell: bash
+        env:
+          TRACE: "1"
+          # Si ton wrapper supporte COLLECTOR_TIMEOUT, il bornera l'exhaustif.
+          COLLECTOR_TIMEOUT: "900"
+        run: |
+          set -xEeuo pipefail
+
+          mkdir -p test-reports/collector
+
+          pwd
+          ls -la scripts/ tests/ run_collector_tests.sh || true
+
+          echo "Git status AVANT run:"
+          git status --porcelain || true
+
+          echo "=== Début run collector suite ==="
+          bash -x ./run_collector_tests.sh 2>&1 | tee test-reports/collector/collector_full.log
+          rc=${PIPESTATUS[0]}
+          echo "=== Fin run - exit code: ${rc} ==="
+
+          echo "Git status APRÈS run:"
+          git status --porcelain || true
+
+          exit "${rc}"
 
       - name: Upload artifacts (always)
         if: always()
@@ -52,9 +128,11 @@ jobs:
         with:
           name: collector-test-artifacts
           path: |
+            test-reports/**
             _test_output_*
-            _stress_output
+            _stress_output*
             _cross*
-            _final_test
-          if-no-files-found: ignore
+            _final_test*
+            *.log
+          if-no-files-found: warn
           retention-days: 3
