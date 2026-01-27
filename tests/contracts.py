@@ -1,19 +1,59 @@
+"""
+contract_probe.py
+
+Génère un rapport contractuel (CLI + zones + formule) pour l'instrument Phi⊗O.
+
+Objectif: un contrat honnête et CI-friendly.
+- Zones: extraction statique (AST + fallback regex sur ZONE_THRESHOLDS)
+- CLI: présence de sous-commandes/flags attendus via --help
+- Formule: optionnelle via run "score" contrôlé
+"""
+
 from __future__ import annotations
 
-import ast
-import os
+import argparse
+import hashlib
+import importlib.util
+import json
 import re
 import subprocess
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 
-# ----------------------------
-# CLI helpers (used by tests)
-# ----------------------------
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
-def run_help(instrument_path: str) -> str:
-    """Run instrument --help and return combined stdout+stderr (never raises)."""
+
+# ---------------------------------------------------------
+# Deterministic load of ./tests/contracts.py (no import drift)
+# ---------------------------------------------------------
+
+def _load_local_contracts_module(repo_root: Path):
+    """
+    Load repo-local tests/contracts.py deterministically.
+    Avoids Python import drift where 'tests' might resolve to site-packages.
+    """
+    contracts_path = repo_root / "tests" / "contracts.py"
+    if not contracts_path.exists():
+        return None
+
+    spec = importlib.util.spec_from_file_location("phio_repo_tests_contracts", str(contracts_path))
+    if spec is None or spec.loader is None:
+        return None
+
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[attr-defined]
+    return mod
+
+
+def _run_help_fallback(instrument_path: str) -> str:
     res = subprocess.run(
         ["python3", instrument_path, "--help"],
         capture_output=True,
@@ -23,161 +63,10 @@ def run_help(instrument_path: str) -> str:
     return (res.stdout or "") + (res.stderr or "")
 
 
-def _extract_long_flags(help_text: str) -> List[str]:
-    flags = re.findall(r"(?<!\w)(--[0-9A-Za-z_\-τ]+)", help_text)
-    flags = [f.strip() for f in flags if f.strip()]
-    return sorted(set(flags))
-
-
-def parse_help_flags(help_text: str) -> Dict[str, Any]:
-    """
-    Tests expect a dict with boolean keys like:
-      - has_new_template
-      - mentions_input
-      - mentions_outdir
-      - mentions_agg
-      - mentions_bottleneck
-    Plus la liste brute sous "flags".
-    """
-    flags_list = _extract_long_flags(help_text)
-    txt = help_text.lower()
-
-    has_new_template = ("new-template" in txt)
-    has_score = (re.search(r"\bscore\b", txt) is not None)
-
-    mentions_input = ("--input" in flags_list) or ("--input" in txt)
-    mentions_outdir = ("--outdir" in flags_list) or ("--outdir" in txt)
-
-    mentions_agg = (
-        "--agg_tau" in flags_list
-        or "--agg_τ" in flags_list
-        or ("agg_" in txt)
-        or ("--agg" in txt)
-    )
-
-    mentions_bottleneck = ("bottleneck" in txt)
-
-    return {
-        "flags": flags_list,
-        "has_new_template": has_new_template,
-        "has_score": has_score,
-        "mentions_input": mentions_input,
-        "mentions_outdir": mentions_outdir,
-        "mentions_agg": mentions_agg,
-        "mentions_bottleneck": mentions_bottleneck,
-    }
-
-
-def detect_tau_agg_flag(help_text: str) -> Optional[str]:
-    """
-    Return the actual tau aggregation flag string if present in help:
-      - prefer unicode: "--agg_τ"
-      - else ascii: "--agg_tau"
-    Return None if neither is present.
-    """
-    flags_list = _extract_long_flags(help_text)
-    if "--agg_τ" in flags_list:
-        return "--agg_τ"
-    if "--agg_tau" in flags_list:
-        return "--agg_tau"
-    return None
-
-
-def _tau_aliases_from_help(help_text: str) -> Dict[str, bool]:
-    flags_list = _extract_long_flags(help_text)
-    s = set(flags_list)
-    return {"has_tau_ascii": "--agg_tau" in s, "has_tau_unicode": "--agg_τ" in s}
-
-
-def extract_cli_contract(help_text: str) -> Dict[str, Any]:
-    flags_list = _extract_long_flags(help_text)
-
-    subcommands: List[str] = []
-    for cmd in ["new-template", "score"]:
-        if re.search(rf"\b{re.escape(cmd)}\b", help_text):
-            subcommands.append(cmd)
-
-    return {
-        "help_valid": len(help_text.strip()) > 0,
-        "help_len": len(help_text),
-        "subcommands": sorted(set(subcommands)),
-        "flags": flags_list,
-        "required_subcommands": ["new-template", "score"],
-        "required_flags": ["--input", "--outdir"],
-        "tau_aliases": _tau_aliases_from_help(help_text),
-    }
-
-
-# ----------------------------
-# AST + fallback helpers (zones extraction)
-# ----------------------------
-
-def _literal_eval_safe(node: ast.AST) -> Any:
-    try:
-        return ast.literal_eval(node)
-    except Exception:
-        return None
-
-
-def _is_number(x: Any) -> bool:
-    return isinstance(x, (int, float)) and not isinstance(x, bool)
-
-
-def _collect_if_chain(node: ast.If) -> Optional[List[ast.If]]:
-    chain: List[ast.If] = []
-    cur: Optional[ast.If] = node
-    while isinstance(cur, ast.If):
-        chain.append(cur)
-        if cur.orelse and len(cur.orelse) == 1 and isinstance(cur.orelse[0], ast.If):
-            cur = cur.orelse[0]
-        else:
-            break
-    return chain if chain else None
-
-
-def _extract_threshold_from_test(test: ast.AST) -> Optional[float]:
-    if not isinstance(test, ast.Compare):
-        return None
-    if len(test.ops) != 1 or len(test.comparators) != 1:
-        return None
-
-    left = test.left
-    right = test.comparators[0]
-    if not isinstance(left, ast.Name) or left.id not in {"T", "t"}:
-        return None
-
-    val = _literal_eval_safe(right)
-    return float(val) if _is_number(val) else None
-
-
-def _extract_zone_from_body(body: List[ast.stmt]) -> Optional[str]:
-    for st in body:
-        if isinstance(st, ast.Assign) and len(st.targets) == 1 and isinstance(st.targets[0], ast.Name):
-            if st.targets[0].id in {"zone", "Z", "label"}:
-                val = _literal_eval_safe(st.value)
-                if isinstance(val, str) and val:
-                    return val
-    return None
-
-
-def _parse_if_chain_for_T(chain: List[ast.If]) -> Tuple[List[float], List[str]]:
-    thresholds: List[float] = []
-    zones: List[str] = []
-    for n in chain:
-        th = _extract_threshold_from_test(n.test)
-        z = _extract_zone_from_body(n.body)
-        if th is None or z is None:
-            return ([], [])
-        thresholds.append(float(th))
-        zones.append(str(z))
-    return thresholds, zones
-
-
 def _fallback_regex_thresholds(src: str) -> Optional[Dict[str, Any]]:
     """
-    Fallback direct: extrait ZONE_THRESHOLDS = [0.5, 1.5, 2.5]
-    même si l'AST heuristique échoue.
-    Parse uniquement des nombres (pas d'éval).
+    Fallback direct (sans eval) : extrait ZONE_THRESHOLDS = [0.5, 1.5, 2.5]
+    Parse uniquement des nombres.
     """
     m = re.search(r"(?m)^\s*ZONE_THRESHOLDS\s*=\s*\[([^\]]+)\]\s*$", src)
     if not m:
@@ -194,76 +83,309 @@ def _fallback_regex_thresholds(src: str) -> Optional[Dict[str, Any]]:
     return {"thresholds": thresholds, "pattern": "fallback_regex", "name": "ZONE_THRESHOLDS"}
 
 
-def extract_zone_thresholds_ast(instrument_path: str) -> Optional[Dict[str, Any]]:
-    """
-    Extraction des zones.
+# ----------------------------
+# Contract sections
+# ----------------------------
 
-    1) AST assign/annassign sur noms attendus (ZONE_THRESHOLDS, ZONES, etc.)
-    2) AST if/elif chain sur T
-    3) Fallback regex sur "ZONE_THRESHOLDS = [...]"
-    """
-    debug = os.environ.get("PHIO_DEBUG_AST", "0") == "1"
-
-    p = Path(instrument_path)
-    if not p.exists():
-        if debug:
-            print(f"[PHIO_DEBUG_AST] instrument not found: {instrument_path}")
-        return None
-
-    src = p.read_text(encoding="utf-8", errors="ignore")
+def extract_cli_contract(instrument_path: Path, run_help_fn) -> Dict[str, Any]:
+    cli: Dict[str, Any] = {
+        "help_valid": False,
+        "help_len": 0,
+        "subcommands": [],
+        "flags": [],
+        "required_subcommands": ["new-template", "score"],
+        "required_flags": ["--input", "--outdir"],
+    }
 
     try:
-        tree = ast.parse(src)
-    except SyntaxError as e:
-        if debug:
-            print(f"[PHIO_DEBUG_AST] ast.parse SyntaxError: {e}")
-        fb = _fallback_regex_thresholds(src)
-        if debug:
-            print(f"[PHIO_DEBUG_AST] fallback_regex -> {fb!r}")
-        return fb
+        help_text = run_help_fn(str(instrument_path))
+        cli["help_valid"] = True
+        cli["help_len"] = len(help_text or "")
+    except Exception as e:
+        cli["error"] = str(e)
+        return cli
 
-    candidate_names = {"ZONE_THRESHOLDS", "ZONES", "ZONE_BOUNDS", "ZONE_LIMITS", "ZONE_CUTS", "THRESHOLDS"}
+    help_text = help_text or ""
+    cli["subcommands"] = [s for s in cli["required_subcommands"] if s in help_text]
 
-    def _handle_assign(name: str, value_node: ast.AST) -> Optional[Dict[str, Any]]:
-        val = _literal_eval_safe(value_node)
-        if debug:
-            print(f"[PHIO_DEBUG_AST] assign {name} -> {val!r}")
+    flags = []
+    for f in ["--input", "--outdir", "--help", "--agg_tau", "--agg_τ"]:
+        if f in help_text:
+            flags.append(f)
+    cli["flags"] = sorted(set(flags))
 
-        if isinstance(val, (list, tuple)) and len(val) > 0 and all(_is_number(x) for x in val):
-            return {"thresholds": [float(x) for x in val], "pattern": "assign", "name": name}
+    cli["tau_aliases"] = {
+        "has_tau_ascii": "--agg_tau" in help_text,
+        "has_tau_unicode": "--agg_τ" in help_text,
+    }
+    return cli
 
-        if isinstance(val, dict) and len(val) > 0:
-            return {"mapping": val, "pattern": "assign", "name": name}
 
-        return None
+def extract_zones_ast_only(instrument_path: Path, extractor_fn) -> Dict[str, Any]:
+    """
+    Extraction des zones (priorité: extracteur repo-local).
+    Fallback interne si l'extracteur renvoie None :
+      - parse regex de ZONE_THRESHOLDS = [...]
+    Ne crashe jamais.
+    """
+    normalized: Dict[str, Any] = {
+        "zones": {},
+        "constants": {},
+        "if_chain": [],
+        "attempted": True,
+        "method": "ast",
+    }
 
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Assign):
-            for t in node.targets:
-                if isinstance(t, ast.Name) and t.id in candidate_names:
-                    out = _handle_assign(t.id, node.value)
-                    if out:
-                        return out
+    try:
+        raw = extractor_fn(str(instrument_path)) if extractor_fn else None
 
-        if isinstance(node, ast.AnnAssign):
-            t = node.target
-            if isinstance(t, ast.Name) and t.id in candidate_names and node.value is not None:
-                out = _handle_assign(t.id, node.value)
-                if out:
-                    return out
+        # Fallback si None (régime actuel en CI)
+        if raw is None:
+            src = instrument_path.read_text(encoding="utf-8", errors="ignore")
+            fb = _fallback_regex_thresholds(src)
+            if fb is None:
+                normalized["method"] = "ast_failed"
+                normalized["error"] = "extract_zone_thresholds_ast returned None"
+                return normalized
+            raw = fb
+            normalized["method"] = "fallback"
+            normalized["fallback"] = "ZONE_THRESHOLDS_regex"
 
-    for node in ast.walk(tree):
-        if isinstance(node, ast.If):
-            chain = _collect_if_chain(node)
-            if not chain:
+        if not isinstance(raw, dict):
+            normalized["method"] = "ast_failed"
+            normalized["error"] = f"extract_zone_thresholds_ast returned non-dict: {type(raw).__name__}"
+            return normalized
+
+        # Format A: {"constants": {...}, "if_chain": [...]}
+        if isinstance(raw.get("constants"), dict) or isinstance(raw.get("if_chain"), list):
+            normalized["constants"] = raw.get("constants") if isinstance(raw.get("constants"), dict) else {}
+            normalized["if_chain"] = raw.get("if_chain") if isinstance(raw.get("if_chain"), list) else []
+            normalized["pattern"] = raw.get("pattern", "ast")
+
+        # Format B1: {"thresholds": [...], ...}
+        elif isinstance(raw.get("thresholds"), (list, tuple)):
+            ths = [
+                x for x in list(raw.get("thresholds"))
+                if isinstance(x, (int, float)) and not isinstance(x, bool)
+            ]
+            normalized["constants"] = {f"THRESH_{i}": float(v) for i, v in enumerate(ths)}
+            normalized["pattern"] = raw.get("pattern", "thresholds")
+            normalized["name"] = raw.get("name")
+
+        # Format B2: {"mapping": {...}, ...}
+        elif isinstance(raw.get("mapping"), dict):
+            mp = raw.get("mapping") if isinstance(raw.get("mapping"), dict) else {}
+            normalized["constants"] = {
+                str(k): v for k, v in mp.items()
+                if isinstance(v, (int, float, str)) and not isinstance(v, bool)
+            }
+            normalized["pattern"] = raw.get("pattern", "mapping")
+            normalized["name"] = raw.get("name")
+
+        else:
+            normalized["method"] = "ast_failed"
+            normalized["error"] = "extract_zone_thresholds_ast returned dict without recognized keys: " + ", ".join(sorted(raw.keys()))
+            return normalized
+
+        # zones = constantes littérales
+        flat: Dict[str, Any] = {}
+        for k, v in (normalized.get("constants") or {}).items():
+            if isinstance(v, (int, float, str)) and not isinstance(v, bool):
+                flat[k] = v
+        normalized["zones"] = flat
+
+        # Conserver diagnostics
+        for k, v in raw.items():
+            if k in ("zones", "constants", "if_chain", "attempted", "method", "error"):
                 continue
-            ths, z = _parse_if_chain_for_T(chain)
-            if ths and z and len(ths) == len(z):
-                if debug:
-                    print(f"[PHIO_DEBUG_AST] if_chain thresholds={ths} zones={z}")
-                return {"thresholds": ths, "zones": z, "pattern": "if_chain"}
+            normalized[k] = v
 
-    fb = _fallback_regex_thresholds(src)
-    if debug:
-        print(f"[PHIO_DEBUG_AST] fallback_regex -> {fb!r}")
-    return fb
+        return normalized
+
+    except Exception as e:
+        normalized["method"] = "ast_failed"
+        normalized["error"] = str(e)
+        return normalized
+
+
+def _run_score_once(
+    instrument_path: Path, input_json: Dict[str, Any]
+) -> Tuple[int, str, str, Optional[Dict[str, Any]]]:
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        in_path = td_path / "input.json"
+        out_dir = td_path / "out"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        in_path.write_text(json.dumps(input_json, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        cmd = ["python3", str(instrument_path), "score", "--input", str(in_path), "--outdir", str(out_dir)]
+        proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
+
+        results_path = out_dir / "results.json"
+        results = None
+        if results_path.exists():
+            try:
+                results = json.loads(results_path.read_text(encoding="utf-8"))
+            except Exception:
+                results = None
+
+        return proc.returncode, proc.stdout or "", proc.stderr or "", results
+
+
+def check_formula_contract(instrument_path: Path) -> Dict[str, Any]:
+    info: Dict[str, Any] = {"golden_attempted": True, "golden_pass": False}
+
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        tpath = td_path / "template.json"
+
+        proc = subprocess.run(
+            ["python3", str(instrument_path), "new-template", "--name", "ContractProbe", "--out", str(tpath)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        if proc.returncode != 0 or not tpath.exists():
+            info["error"] = f"new-template failed: {proc.stderr or proc.stdout}"
+            return info
+
+        template = json.loads(tpath.read_text(encoding="utf-8"))
+        for it in template.get("items", []):
+            if "score" in it:
+                it["score"] = 2
+
+        rc, _out, err, results = _run_score_once(instrument_path, template)
+        if rc != 0 or not results:
+            info["error"] = f"score failed: {err}"
+            return info
+
+        if "T" not in results or "K_eff" not in results:
+            info["error"] = "results.json missing T and/or K_eff"
+            return info
+
+        dim_scores = results.get("dimension_scores") or {}
+        if not dim_scores:
+            for it in template.get("items", []):
+                dim = it.get("dimension")
+                if dim is not None:
+                    dim_scores[dim] = it.get("score", 0)
+
+        tau_key = "τ" if "τ" in dim_scores else ("tau" if "tau" in dim_scores else None)
+        if tau_key is None:
+            info["error"] = "cannot identify tau dimension key (τ or tau)"
+            return info
+
+        try:
+            Cx = float(dim_scores.get("Cx", 0))
+            K = float(dim_scores.get("K", 0))
+            tau = float(dim_scores.get(tau_key, 0))
+            G = float(dim_scores.get("G", 0))
+            D = float(dim_scores.get("D", 0))
+
+            import math
+
+            k_eff_expected = K / (1.0 + tau + G + D + Cx)
+            t_expected = Cx + tau + G + D - k_eff_expected
+
+            k_ok = math.isclose(float(results["K_eff"]), k_eff_expected, rel_tol=1e-5, abs_tol=1e-8)
+            t_ok = math.isclose(float(results["T"]), t_expected, rel_tol=1e-5, abs_tol=1e-8)
+
+            info["k_eff_expected"] = k_eff_expected
+            info["t_expected"] = t_expected
+            info["k_eff_observed"] = results["K_eff"]
+            info["t_observed"] = results["T"]
+            info["golden_pass"] = bool(k_ok and t_ok)
+        except Exception as e:
+            info["error"] = str(e)
+
+    return info
+
+
+def calculate_compliance_levels(cli_info: Dict[str, Any], zones_info: Dict[str, Any], formula_info: Dict[str, Any]) -> Dict[str, Any]:
+    def assess_level(full: bool, partial: bool) -> str:
+        if full:
+            return "FULL"
+        if partial:
+            return "PARTIAL"
+        return "MINIMAL"
+
+    cli_full = bool(
+        cli_info.get("help_valid", False)
+        and len(cli_info.get("subcommands", [])) >= 2
+        and all(f in (cli_info.get("flags") or []) for f in ["--input", "--outdir"])
+    )
+    cli_partial = bool(cli_info.get("help_valid", False))
+    cli_level = assess_level(cli_full, cli_partial)
+
+    zones = zones_info.get("zones") or {}
+    literal_zones = {k: v for k, v in zones.items() if isinstance(v, (int, float, str)) and not isinstance(v, bool)}
+    zones_full = len(literal_zones) > 0
+    zones_partial = bool(zones_info.get("attempted", False))
+    zones_level = assess_level(zones_full, zones_partial)
+
+    formula_full = bool(formula_info.get("golden_pass", False))
+    formula_partial = bool(formula_info.get("golden_attempted", False))
+    formula_level = assess_level(formula_full, formula_partial)
+
+    order = {"FULL": 3, "PARTIAL": 2, "MINIMAL": 1}
+    global_level = min([cli_level, zones_level, formula_level], key=lambda x: order[x])
+
+    return {
+        "axes": {"cli": cli_level, "zones": zones_level, "formula": formula_level},
+        "global": global_level,
+        "summary": f"CLI:{cli_level}/ZONES:{zones_level}/FORMULA:{formula_level}",
+    }
+
+
+def generate_contract_report(instrument_path: Path, check_formula: bool) -> Dict[str, Any]:
+    repo_root = Path(__file__).resolve().parent
+    contracts_mod = _load_local_contracts_module(repo_root)
+
+    run_help_fn = getattr(contracts_mod, "run_help", _run_help_fallback) if contracts_mod else _run_help_fallback
+    extractor_fn = getattr(contracts_mod, "extract_zone_thresholds_ast", None) if contracts_mod else None
+
+    cli = extract_cli_contract(instrument_path, run_help_fn=run_help_fn)
+    zones = extract_zones_ast_only(instrument_path, extractor_fn=extractor_fn)
+    formula = check_formula_contract(instrument_path) if check_formula else {"golden_attempted": False, "golden_pass": False}
+    compliance = calculate_compliance_levels(cli, zones, formula)
+
+    return {
+        "contract_version": "1.5",
+        "instrument_path": str(instrument_path),
+        "instrument_hash": f"sha256:{_sha256_file(instrument_path)}",
+        "validation_timestamp": datetime.now(timezone.utc).isoformat(),
+        "compliance": compliance,
+        "summary": {
+            "cli_help_valid": cli.get("help_valid", False),
+            "zones_attempted": zones.get("attempted", False),
+            "zones_count": len([k for k, v in (zones.get("zones") or {}).items() if isinstance(v, (int, float, str)) and not isinstance(v, bool)]),
+            "formula_checked": bool(check_formula),
+            "formula_pass": bool(formula.get("golden_pass", False)) if check_formula else False,
+        },
+        "cli": cli,
+        "zones": zones,
+        "formula": formula,
+    }
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Generate a contractual validation report for Phi⊗O.")
+    ap.add_argument("--instrument", required=True, help="Path to the instrument python file.")
+    ap.add_argument("--out", required=True, help="Output JSON report path.")
+    ap.add_argument("--check-formula", action="store_true", help="Also run a deterministic score to verify formula.")
+    args = ap.parse_args()
+
+    inst = Path(args.instrument).resolve()
+    if not inst.exists():
+        raise SystemExit(f"Instrument not found: {inst}")
+
+    report = generate_contract_report(inst, check_formula=bool(args.check_formula))
+    out_path = Path(args.out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"Wrote contract report to: {out_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
