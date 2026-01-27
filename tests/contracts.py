@@ -30,6 +30,15 @@ def _extract_long_flags(help_text: str) -> List[str]:
 
 
 def parse_help_flags(help_text: str) -> Dict[str, Any]:
+    """
+    Tests expect a dict with boolean keys like:
+      - has_new_template
+      - mentions_input
+      - mentions_outdir
+      - mentions_agg
+      - mentions_bottleneck
+    Plus la liste brute sous "flags".
+    """
     flags_list = _extract_long_flags(help_text)
     txt = help_text.lower()
 
@@ -60,6 +69,12 @@ def parse_help_flags(help_text: str) -> Dict[str, Any]:
 
 
 def detect_tau_agg_flag(help_text: str) -> Optional[str]:
+    """
+    Return the actual tau aggregation flag string if present in help:
+      - prefer unicode: "--agg_τ"
+      - else ascii: "--agg_tau"
+    Return None if neither is present.
+    """
     flags_list = _extract_long_flags(help_text)
     if "--agg_τ" in flags_list:
         return "--agg_τ"
@@ -160,12 +175,12 @@ def _parse_if_chain_for_T(chain: List[ast.If]) -> Tuple[List[float], List[str]]:
 
 def _fallback_regex_thresholds(src: str) -> Optional[Dict[str, Any]]:
     """
-    Fallback ultra-direct: extrait ZONE_THRESHOLDS = [0.5, 1.5, 2.5] même si AST heuristique échoue.
-    Ne tente pas d'évaluer du code arbitraire. Parse seulement des nombres.
+    Fallback direct: extrait ZONE_THRESHOLDS = [0.5, 1.5, 2.5]
+    même si l'AST heuristique échoue.
+    Parse uniquement des nombres (pas d'éval).
     """
     m = re.search(r"(?m)^\s*ZONE_THRESHOLDS\s*=\s*\[([^\]]+)\]\s*$", src)
     if not m:
-        # tolère tuple
         m = re.search(r"(?m)^\s*ZONE_THRESHOLDS\s*=\s*\(([^\)]+)\)\s*$", src)
     if not m:
         return None
@@ -181,11 +196,11 @@ def _fallback_regex_thresholds(src: str) -> Optional[Dict[str, Any]]:
 
 def extract_zone_thresholds_ast(instrument_path: str) -> Optional[Dict[str, Any]]:
     """
-    Heuristic extraction of zones.
+    Extraction des zones.
 
-    1) AST assign/annassign to names like ZONE_THRESHOLDS / ZONES
-    2) AST if/elif chain on T
-    3) Fallback regex on literal "ZONE_THRESHOLDS = [...]"
+    1) AST assign/annassign sur noms attendus (ZONE_THRESHOLDS, ZONES, etc.)
+    2) AST if/elif chain sur T
+    3) Fallback regex sur "ZONE_THRESHOLDS = [...]"
     """
     debug = os.environ.get("PHIO_DEBUG_AST", "0") == "1"
 
@@ -197,13 +212,11 @@ def extract_zone_thresholds_ast(instrument_path: str) -> Optional[Dict[str, Any]
 
     src = p.read_text(encoding="utf-8", errors="ignore")
 
-    # --- AST parse ---
     try:
         tree = ast.parse(src)
     except SyntaxError as e:
         if debug:
             print(f"[PHIO_DEBUG_AST] ast.parse SyntaxError: {e}")
-        # try fallback anyway
         fb = _fallback_regex_thresholds(src)
         if debug:
             print(f"[PHIO_DEBUG_AST] fallback_regex -> {fb!r}")
@@ -250,7 +263,6 @@ def extract_zone_thresholds_ast(instrument_path: str) -> Optional[Dict[str, Any]
                     print(f"[PHIO_DEBUG_AST] if_chain thresholds={ths} zones={z}")
                 return {"thresholds": ths, "zones": z, "pattern": "if_chain"}
 
-    # --- Fallback ---
     fb = _fallback_regex_thresholds(src)
     if debug:
         print(f"[PHIO_DEBUG_AST] fallback_regex -> {fb!r}")
