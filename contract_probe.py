@@ -351,4 +351,242 @@ def internal_extract_zones(instrument_path: Path) -> ZonesExtraction:
     # AST path
     val, err = ast_extract_zone_thresholds(text)
     if val is not None:
-        return ZonesExtracti
+        return ZonesExtraction(ok=True, method="internal_ast_assign", value=val, error=None, forensics=fx)
+    fx["internal_ast_error"] = err
+
+    # Balanced capture + literal_eval
+    lit, err2 = balanced_capture_after_equals(text, "ZONE_THRESHOLDS")
+    if lit is None:
+        fx["internal_fallback_error"] = err2
+        return ZonesExtraction(ok=False, method="internal_failed", value=None, error=err2, forensics=fx)
+
+    fx["captured_literal_len"] = len(lit)
+    try:
+        v2 = ast.literal_eval(lit)
+        return ZonesExtraction(ok=True, method="internal_regex_balanced_literal_eval", value=v2, error=None, forensics=fx)
+    except Exception as e:
+        fx["internal_fallback_literal_eval_error"] = f"{type(e).__name__}: {e}"
+        return ZonesExtraction(ok=False, method="internal_failed", value=None, error=fx["internal_fallback_literal_eval_error"], forensics=fx)
+
+
+# -------------------------
+# Optional: call tests/contracts.py extractor (if available)
+# -------------------------
+
+def try_tests_extractor(contracts_mod: Any, instrument_path: Path) -> Tuple[Optional[Any], Dict[str, Any]]:
+    """
+    Try to call extract_zone_thresholds_ast from loaded contracts module.
+    Returns (value_or_none, forensics_dict).
+    """
+    fx: Dict[str, Any] = {
+        "tests_extractor_available": False,
+        "tests_extractor_called": False,
+        "tests_extractor_returned_none": False,
+        "tests_extractor_type": None,
+        "tests_extractor_error": None,
+    }
+    if contracts_mod is None:
+        return None, fx
+
+    fn = getattr(contracts_mod, "extract_zone_thresholds_ast", None)
+    if fn is None or not callable(fn):
+        return None, fx
+
+    fx["tests_extractor_available"] = True
+    fx["tests_extractor_called"] = True
+    try:
+        res = fn(str(instrument_path))
+        if res is None:
+            fx["tests_extractor_returned_none"] = True
+            return None, fx
+        fx["tests_extractor_type"] = type(res).__name__
+        return res, fx
+    except Exception as e:
+        fx["tests_extractor_error"] = f"{type(e).__name__}: {e}"
+        return None, fx
+
+
+# -------------------------
+# Compliance synthesis
+# -------------------------
+
+def axis_cli_level(cli: Dict[str, Any]) -> str:
+    if not cli.get("help_valid"):
+        return "MINIMAL"
+    req_flags = set(cli.get("required_flags", []))
+    got_flags = set(cli.get("flags", []))
+    req_cmds = set(cli.get("required_subcommands", []))
+    got_cmds = set(cli.get("subcommands", []))
+    if req_flags.issubset(got_flags) and req_cmds.issubset(got_cmds):
+        return "FULL"
+    return "PARTIAL"
+
+
+def axis_zones_level(zones_count: int, attempted: bool, method: str) -> str:
+    if zones_count > 0:
+        return "FULL"
+    if attempted and method not in ("internal_failed", "ast_failed"):
+        return "PARTIAL"
+    if attempted:
+        return "PARTIAL"
+    return "MINIMAL"
+
+
+def global_level(axes: Dict[str, str]) -> str:
+    # Conservative: global is MINIMAL unless at least one axis is FULL and none are MINIMAL
+    vals = list(axes.values())
+    if all(v == "FULL" for v in vals):
+        return "FULL"
+    if "FULL" in vals and "MINIMAL" not in vals:
+        return "PARTIAL"
+    return "MINIMAL"
+
+
+# -------------------------
+# Main
+# -------------------------
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--instrument", required=True, help="Path to instrument python file")
+    ap.add_argument("--out", required=True, help="Output baseline JSON path")
+    args = ap.parse_args()
+
+    repo_root = Path(__file__).resolve().parent
+    instrument_path = (repo_root / args.instrument).resolve() if not Path(args.instrument).is_absolute() else Path(args.instrument).resolve()
+    out_path = (repo_root / args.out).resolve() if not Path(args.out).is_absolute() else Path(args.out).resolve()
+
+    probe_path = Path(__file__).resolve()
+
+    # Probe forensics (always)
+    probe_fx: Dict[str, Any] = {
+        "probe_path": str(probe_path),
+        "probe_sha256": sha256_file(probe_path) if probe_path.exists() else None,
+        "repo_root": str(repo_root),
+        "cwd": os.getcwd(),
+        "python": {
+            "version": sys.version,
+            "executable": sys.executable,
+            "platform": platform.platform(),
+        },
+        "env": {
+            "GITHUB_SHA": os.getenv("GITHUB_SHA"),
+            "GITHUB_REF": os.getenv("GITHUB_REF"),
+            "GITHUB_WORKFLOW": os.getenv("GITHUB_WORKFLOW"),
+            "GITHUB_RUN_ID": os.getenv("GITHUB_RUN_ID"),
+        },
+    }
+
+    # Load contracts module deterministically
+    contracts_mod, contracts_fx = load_contracts_module(repo_root)
+    probe_fx.update({"contracts": contracts_fx})
+
+    # Instrument basic fields
+    baseline: Dict[str, Any] = {
+        "contract_version": "1.5",
+        "instrument_path": str(instrument_path),
+        "instrument_hash": sha256_file(instrument_path) if instrument_path.exists() else None,
+        "validation_timestamp": utc_now_iso(),
+        "_probe_forensics": probe_fx,
+        "compliance": {},
+        "summary": {},
+        "cli": {},
+        "zones": {},
+        "formula": {"golden_attempted": False, "golden_pass": False},
+    }
+
+    # CLI
+    cli = run_help(instrument_path) if instrument_path.exists() else {
+        "help_valid": False, "help_len": 0, "subcommands": [], "flags": [],
+        "required_subcommands": ["new-template", "score"], "required_flags": ["--input", "--outdir"],
+        "tau_aliases": {"has_tau_ascii": False, "has_tau_unicode": False},
+        "_forensics": {"cmd": None, "returncode": None, "timeout_s": None, "stderr_tail": "instrument_missing"},
+    }
+    baseline["cli"] = json_sanitize(cli)
+
+    # Zones: try tests extractor then internal
+    zones_attempted = True
+    tests_val, tests_fx = try_tests_extractor(contracts_mod, instrument_path)
+    internal = internal_extract_zones(instrument_path) if instrument_path.exists() else ZonesExtraction(
+        ok=False, method="internal_failed", value=None, error="instrument_missing",
+        forensics={"instrument_has_ZONE_THRESHOLDS": False, "instrument_zone_line": None}
+    )
+
+    # Decide final zones
+    zones_method = None
+    zones_error = None
+    zones_value = None
+    chosen_forensics: Dict[str, Any] = {}
+
+    if tests_val is not None:
+        zones_method = "tests_extractor"
+        zones_value = tests_val
+        zones_error = None
+        chosen_forensics = {
+            **tests_fx,
+            "internal": json_sanitize(internal.forensics),
+            "chosen": "tests_extractor",
+        }
+    elif internal.ok:
+        zones_method = internal.method
+        zones_value = internal.value
+        zones_error = None
+        chosen_forensics = {
+            **tests_fx,
+            "internal": json_sanitize(internal.forensics),
+            "chosen": "internal",
+        }
+    else:
+        zones_method = "ast_failed"  # preserve observed failure label convention
+        zones_value = None
+        zones_error = internal.error or "unknown"
+        chosen_forensics = {
+            **tests_fx,
+            "internal": json_sanitize(internal.forensics),
+            "chosen": "failed",
+        }
+
+    zones_dict, zones_count = normalize_zones_to_json_obj(zones_value) if zones_value is not None else ({}, 0)
+
+    baseline["zones"] = {
+        "zones": zones_dict,
+        "constants": {},
+        "if_chain": [],
+        "attempted": zones_attempted,
+        "method": zones_method,
+        "error": zones_error,
+        "_forensics": json_sanitize(chosen_forensics),
+    }
+
+    # Summary + Compliance
+    axes = {
+        "cli": axis_cli_level(cli),
+        "zones": axis_zones_level(zones_count, zones_attempted, str(zones_method)),
+        "formula": "MINIMAL",
+    }
+    baseline["summary"] = {
+        "cli_help_valid": bool(cli.get("help_valid")),
+        "zones_attempted": True,
+        "zones_count": zones_count,
+        "formula_checked": False,
+        "formula_pass": False,
+    }
+
+    comp = {
+        "axes": axes,
+        "global": global_level(axes),
+        "summary": f"CLI:{axes['cli']}/ZONES:{axes['zones']}/FORMULA:{axes['formula']}",
+    }
+    baseline["compliance"] = comp
+
+    # Write strict JSON
+    ensure_parent_dir(out_path)
+    with out_path.open("w", encoding="utf-8") as f:
+        json.dump(baseline, f, ensure_ascii=False, indent=2, sort_keys=False)
+        f.write("\n")
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
