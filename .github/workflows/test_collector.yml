@@ -50,20 +50,6 @@ jobs:
             echo "No requirements.txt found; skipping pip install."
           fi
 
-      - name: Debug repo layout
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          echo "PWD=$(pwd)"
-          echo "Root:"
-          ls -la
-          echo "scripts:"
-          ls -la scripts || true
-          echo "tests:"
-          ls -la tests || true
-          echo "workflows:"
-          ls -la .github/workflows || true
-
       - name: Ensure executable bits (defensive)
         shell: bash
         run: |
@@ -75,49 +61,24 @@ jobs:
           chmod +x tests/test_cross_validation.sh || true
           chmod +x validate_contract_warnings.sh || true
 
-          echo "EXEC? scripts/phio_llm_collect.sh: $(test -x scripts/phio_llm_collect.sh && echo YES || echo NO)"
-          echo "EXEC? run_collector_tests.sh:      $(test -x run_collector_tests.sh && echo YES || echo NO)"
-          echo "EXEC? exhaustive:                 $(test -x tests/test_llm_collector_exhaustive.sh && echo YES || echo NO)"
-          echo "EXEC? validate_contract_warnings: $(test -x validate_contract_warnings.sh && echo YES || echo NO)"
-
-      - name: Reset any local modifications (CI clean state)
-        # Par défaut: ON. Mets ENABLE_CI_RESET=0 pour désactiver.
-        shell: bash
-        env:
-          ENABLE_CI_RESET: "1"
-        run: |
-          set -Eeuo pipefail
-          if [ "${ENABLE_CI_RESET}" = "1" ]; then
-            echo "CI reset enabled: cleaning workspace"
-            git checkout -- . || true
-            git clean -fd || true
-          else
-            echo "CI reset disabled"
-          fi
-
       - name: Run suite (verbose + capture log)
         shell: bash
         env:
           TRACE: "1"
-          # Si ton wrapper supporte COLLECTOR_TIMEOUT, il bornera l'exhaustif.
           COLLECTOR_TIMEOUT: "900"
         run: |
           set -xEeuo pipefail
-
           mkdir -p test-reports/collector
 
-          pwd
-          ls -la scripts/ tests/ run_collector_tests.sh || true
-
-          echo "Git status AVANT run:"
+          echo "Git status AVANT:"
           git status --porcelain || true
 
-          echo "=== Début run collector suite ==="
+          echo "=== RUN: run_collector_tests.sh ==="
           bash -x ./run_collector_tests.sh 2>&1 | tee test-reports/collector/collector_full.log
           rc=${PIPESTATUS[0]}
-          echo "=== Fin run - exit code: ${rc} ==="
+          echo "=== EXIT CODE: ${rc} ==="
 
-          echo "Git status APRÈS run:"
+          echo "Git status APRÈS:"
           git status --porcelain || true
 
           exit "${rc}"
@@ -129,10 +90,6 @@ jobs:
           name: collector-test-artifacts
           path: |
             test-reports/**
-            _test_output_*
-            _stress_output*
-            _cross*
-            _final_test*
             *.log
           if-no-files-found: warn
           retention-days: 3
