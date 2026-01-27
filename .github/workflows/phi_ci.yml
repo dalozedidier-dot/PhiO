@@ -34,22 +34,26 @@ jobs:
           set -euo pipefail
           test -f .contract/contract_baseline.json || (echo "❌ Missing .contract/contract_baseline.json. Generate + commit a baseline." && exit 1)
 
-      - name: Hardening: baseline must be valid JSON + not empty
+      - name: Hardening: baseline must be valid JSON + not empty + minimal keys
         run: |
           set -euo pipefail
           python - <<'PY'
           import json
+
           p = ".contract/contract_baseline.json"
           with open(p, "r", encoding="utf-8") as f:
               data = json.load(f)
+
           if not isinstance(data, dict):
               raise SystemExit("❌ Baseline JSON is not an object/dict.")
           if len(data) == 0:
               raise SystemExit("❌ Baseline is empty ({}). Generate + commit a baseline.")
+
           required = ["contract_version", "compliance", "cli", "zones", "formula"]
           missing = [k for k in required if k not in data]
           if missing:
               raise SystemExit(f"❌ Baseline missing keys: {missing}")
+
           print("✅ Baseline OK")
           PY
 
