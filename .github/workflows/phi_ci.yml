@@ -25,23 +25,23 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then
+          if [ -f pyproject.toml ]; then
+            python -m pip install -e ".[dev]" || python -m pip install -e .
+          elif [ -f requirements.txt ]; then
             python -m pip install -r requirements.txt
           fi
-          # Sécurité, même si déjà dans requirements.txt
           python -m pip install pytest
 
-      - name: Run PhiO smoke (contract + tests)
+      - name: Run PhiO tests
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p _ci_out
-
           if [ -f "./run_all_tests.sh" ]; then
             chmod +x ./run_all_tests.sh
-            ./run_all_tests.sh 2>&1 | tee _ci_out/phio_smoke.log
+            ./run_all_tests.sh 2>&1 | tee _ci_out/phio_tests.log
           else
-            python -m pytest -q 2>&1 | tee _ci_out/phio_pytest.log
+            python -m pytest -q 2>&1 | tee _ci_out/phio_tests.log
           fi
 
       - name: Upload artifacts
