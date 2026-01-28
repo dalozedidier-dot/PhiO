@@ -1,15 +1,14 @@
-name: Band suite (SOST)
+name: Smoke (PhiO)
 
 on:
   push:
     branches: [ "main" ]
+  pull_request:
   workflow_dispatch:
 
 jobs:
-  band_suite:
+  smoke:
     runs-on: ubuntu-latest
-    env:
-      PYTHONPATH: .
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,18 +24,23 @@ jobs:
           set -euo pipefail
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install numpy pandas
+          pip install pytest
 
-      - name: Run band suite
+      - name: Run PhiO tests
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p _ci_out
-          python scripts/ci_band_suite.py --pattern "test_data/band_*.csv" --outdir "_ci_out"
+          if [ -x ./run_all_tests.sh ]; then
+            ./run_all_tests.sh
+          else
+            python -m pytest -q
+          fi
 
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: band_suite_artifacts
-          path: _ci_out/
+          name: phio_artifacts
+          path: |
+            test-reports/
+            _ci_out/
