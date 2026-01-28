@@ -3,30 +3,50 @@ name: Smoke (PhiO)
 on:
   workflow_dispatch:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
   smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            python -m pip install -r requirements.txt
+          fi
+          python -m pip install pytest
 
       - name: Run PhiO tests
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p _ci_out
           if [ -f ./run_all_tests.sh ]; then
             chmod +x ./run_all_tests.sh
-            ./run_all_tests.sh
+            ./run_all_tests.sh 2>&1 | tee _ci_out/smoke.log
           else
-            python -m pip install -U pip pytest
-            pytest -q
+            python -m pytest -q 2>&1 | tee _ci_out/smoke.log
           fi
 
-      - name: Upload test reports
+      - name: Upload artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: phio_reports
-          path: test-reports/
-          if-no-files-found: ignore
+          name: phio_smoke_artifacts
+          path: |
+            _ci_out/
+            test-results/
+          if-no-files-found: warn
