@@ -1,0 +1,51 @@
+name: Collector Debug (PhiO)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Debug + fix collector executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "PWD=$(pwd)"
+          echo "Tree scripts:"
+          ls -la scripts || true
+          echo ""
+          echo "Collector exists?"; test -e scripts/phio_llm_collect.sh && echo YES || echo NO
+          echo "Collector exec?";   test -x scripts/phio_llm_collect.sh && echo YES || echo NO
+          if test -e scripts/phio_llm_collect.sh; then
+            chmod +x scripts/phio_llm_collect.sh
+            echo "After chmod exec?"; test -x scripts/phio_llm_collect.sh && echo YES || echo NO
+          fi
+
+      - name: Try run collector (non fatal)
+        shell: bash
+        run: |
+          set +e
+          rm -rf _ci_out
+          mkdir -p _ci_out
+          if test -e scripts/phio_llm_collect.sh; then
+            ./scripts/phio_llm_collect.sh 2>&1 | tee _ci_out/collector.log
+            echo $? > _ci_out/collector_exit_code.txt
+          else
+            echo "Missing scripts/phio_llm_collect.sh" | tee _ci_out/collector.log
+            echo 2 > _ci_out/collector_exit_code.txt
+          fi
+          exit 0
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: collector_debug_artifacts
+          path: _ci_out/
+          retention-days: 30
+          if-no-files-found: error
