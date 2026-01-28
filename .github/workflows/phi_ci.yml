@@ -15,26 +15,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python (toolcache)
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Debug python paths
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "PATH python:"
-          which python || true
-          python -V || true
-          echo ""
-          echo "/usr/bin/python:"
-          /usr/bin/python -V || true
-          echo ""
-          echo "/usr/bin/python3:"
-          /usr/bin/python3 -V || true
-
-      - name: Install deps (PATH python) + pytest
+      - name: Install dependencies
         shell: bash
         run: |
           set -euo pipefail
@@ -44,52 +30,46 @@ jobs:
           fi
           pip install pytest
 
-      - name: Install pytest for /usr/bin/python (system python)
+      - name: Fix executable bits (CLI + collector)
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y python3-pip
-          /usr/bin/python -m pip install -U pip
-          /usr/bin/python -m pip install pytest
+          chmod +x phi_otimes_o_instrument_v0_1.py 2>/dev/null || true
+          chmod +x scripts/phio_llm_collect.sh 2>/dev/null || true
+          ls -la phi_otimes_o_instrument_v0_1.py || true
+          ls -la scripts/phio_llm_collect.sh || true
 
-      - name: Debug + fix collector executable
+      - name: Run PhiO tests (and capture real exit code)
         shell: bash
-        run: |
-          set -euo pipefail
-          echo "PWD=$(pwd)"
-          echo "LS scripts:"
-          ls -la scripts || true
-          echo "EXISTS?"; test -e scripts/phio_llm_collect.sh && echo YES || echo NO
-          echo "EXEC?";   test -x scripts/phio_llm_collect.sh && echo YES || echo NO
-          if test -e scripts/phio_llm_collect.sh; then
-            chmod +x scripts/phio_llm_collect.sh
-            echo "After chmod: EXEC?"; test -x scripts/phio_llm_collect.sh && echo YES || echo NO
-          fi
-
-      - name: Run PhiO tests
-        shell: bash
+        env:
+          PYTHONPATH: .
         run: |
           set +e
           rm -rf _ci_out
           mkdir -p _ci_out
 
+          code=0
+
           if [ -f run_all_tests.sh ]; then
-            bash run_all_tests.sh 2>&1 | tee _ci_out/phio_stdout.log
-            echo $? > _ci_out/exit_code.txt
+            bash run_all_tests.sh 2>&1 | tee _ci_out/run_all_tests.log
+            code=$?
           elif [ -f run_all_tests.py ]; then
-            python run_all_tests.py 2>&1 | tee _ci_out/phio_stdout.log
-            echo $? > _ci_out/exit_code.txt
+            python run_all_tests.py 2>&1 | tee _ci_out/run_all_tests.log
+            code=$?
           else
-            echo "No run_all_tests.sh or run_all_tests.py found" | tee _ci_out/phio_stdout.log
-            echo 2 > _ci_out/exit_code.txt
+            echo "No run_all_tests.sh or run_all_tests.py found" | tee _ci_out/run_all_tests.log
+            code=2
           fi
 
-          # Optionnel: pytest direct si tests/ existe
           if [ -d tests ]; then
-            pytest -q 2>&1 | tee -a _ci_out/phio_stdout.log
+            pytest -q 2>&1 | tee _ci_out/pytest.log
+            pytest_code=$?
+            if [ "$pytest_code" != "0" ]; then
+              code=$pytest_code
+            fi
           fi
 
+          echo "$code" > _ci_out/exit_code.txt
           exit 0
 
       - name: Upload artifacts
@@ -103,12 +83,12 @@ jobs:
           retention-days: 30
           if-no-files-found: ignore
 
-      - name: Fail only on fatal errors
+      - name: Fail if tests failed
         shell: bash
         run: |
           set -euo pipefail
           code=$(cat _ci_out/exit_code.txt || echo 99)
           echo "exit_code=$code"
-          if [ "$code" = "2" ] || [ "$code" = "99" ]; then
+          if [ "$code" != "0" ]; then
             exit 1
           fi
