@@ -1,0 +1,96 @@
+diff -ruN '--exclude=__pycache__' '--exclude=*.pyc' '--exclude=.pytest_cache' /mnt/data/orig/phio/PhiO-main/.github/workflows/smoke.yml /mnt/data/work/phio/PhiO-main/.github/workflows/smoke.yml
+--- /mnt/data/orig/phio/PhiO-main/.github/workflows/smoke.yml	2026-01-28 22:31:00.000000000 +0000
++++ /mnt/data/work/phio/PhiO-main/.github/workflows/smoke.yml	1970-01-01 00:00:00.000000000 +0000
+@@ -1,32 +0,0 @@
+-name: Smoke (PhiO)
+-
+-on:
+-  workflow_dispatch:
+-  push:
+-    branches: [ "main" ]
+-
+-jobs:
+-  smoke:
+-    runs-on: ubuntu-latest
+-    steps:
+-      - name: Checkout
+-        uses: actions/checkout@v4
+-
+-      - name: Run PhiO tests
+-        shell: bash
+-        run: |
+-          set -euo pipefail
+-          if [ -f ./run_all_tests.sh ]; then
+-            chmod +x ./run_all_tests.sh
+-            ./run_all_tests.sh
+-          else
+-            python -m pip install -U pip pytest
+-            pytest -q
+-          fi
+-
+-      - name: Upload test reports
+-        uses: actions/upload-artifact@v4
+-        with:
+-          name: phio_reports
+-          path: test-reports/
+-          if-no-files-found: ignore
+diff -ruN '--exclude=__pycache__' '--exclude=*.pyc' '--exclude=.pytest_cache' /mnt/data/orig/phio/PhiO-main/.github/workflows/smoke_phio.yml /mnt/data/work/phio/PhiO-main/.github/workflows/smoke_phio.yml
+--- /mnt/data/orig/phio/PhiO-main/.github/workflows/smoke_phio.yml	2026-01-28 22:31:00.000000000 +0000
++++ /mnt/data/work/phio/PhiO-main/.github/workflows/smoke_phio.yml	1970-01-01 00:00:00.000000000 +0000
+@@ -1,56 +0,0 @@
+-name: Smoke PhiO (fixed)
+-
+-on:
+-  workflow_dispatch:
+-  push:
+-    branches: [ "main" ]
+-
+-jobs:
+-  smoke:
+-    runs-on: ubuntu-latest
+-
+-    steps:
+-      - name: Checkout
+-        uses: actions/checkout@v4
+-
+-      - name: Debug python paths
+-        shell: bash
+-        run: |
+-          set -euo pipefail
+-          echo "which python:"; which python || true
+-          echo "python -V:"; python -V || true
+-          echo "/usr/bin/python -V:"; /usr/bin/python -V || true
+-
+-      - name: Ensure pytest exists for /usr/bin/python
+-        shell: bash
+-        run: |
+-          set -euo pipefail
+-          sudo apt-get update
+-          sudo apt-get install -y python3-pytest
+-          /usr/bin/python -c "import pytest; print('pytest OK:', pytest.__version__)"
+-
+-      - name: Run PhiO tests
+-        shell: bash
+-        env:
+-          PYTHONPATH: .
+-        run: |
+-          set -euo pipefail
+-          if [ -f run_all_tests.sh ]; then
+-            bash run_all_tests.sh
+-          elif [ -f run_all_tests.py ]; then
+-            /usr/bin/python run_all_tests.py
+-          else
+-            echo "No run_all_tests.sh or run_all_tests.py found"
+-            exit 2
+-          fi
+-
+-      - name: Upload test reports
+-        if: always()
+-        uses: actions/upload-artifact@v4
+-        with:
+-          name: phio_artifacts
+-          path: |
+-            test-reports/
+-            _ci_out/
+-          retention-days: 30
+-          if-no-files-found: ignore
