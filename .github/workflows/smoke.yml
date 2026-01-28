@@ -1,0 +1,32 @@
+name: Smoke (PhiO)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run PhiO tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f ./run_all_tests.sh ]; then
+            chmod +x ./run_all_tests.sh
+            ./run_all_tests.sh
+          else
+            python -m pip install -U pip pytest
+            pytest -q
+          fi
+
+      - name: Upload test reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: phio_reports
+          path: test-reports/
+          if-no-files-found: ignore

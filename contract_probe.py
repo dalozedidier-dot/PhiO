@@ -76,21 +76,6 @@ def json_sanitize(obj: Any) -> Any:
         return repr(obj)
 
 
-chore/update-contract-baseline
-
-
-def canonicalize_json(obj: Any) -> Any:
-    """Recursively sort dict keys for deterministic JSON.
-
-    Lists keep their order (assumed meaningful). Sets/tuples are converted by json_sanitize().
-    """
-    obj = json_sanitize(obj)
-    if isinstance(obj, dict):
-        return {k: canonicalize_json(obj[k]) for k in sorted(obj.keys(), key=lambda x: str(x))}
-    if isinstance(obj, list):
-        return [canonicalize_json(x) for x in obj]
-    return obj
-main
 # -------------------------
 # Deterministic load of ./tests/contracts.py
 # -------------------------
@@ -365,7 +350,6 @@ def internal_extract_zones(instrument_path: Path) -> ZonesExtraction:
     if lit is None:
         fx["internal_fallback_error"] = err2
         return ZonesExtraction(ok=False, method="internal_failed", value=None, error=err2, forensics=fx)
-chore/update-contract-baseline
 
     fx["captured_literal_len"] = len(lit)
     try:
@@ -374,21 +358,12 @@ chore/update-contract-baseline
     except Exception as e:
         fx["internal_fallback_literal_eval_error"] = f"{type(e).__name__}: {e}"
         return ZonesExtraction(ok=False, method="internal_failed", value=None, error=fx["internal_fallback_literal_eval_error"], forensics=fx)
-    fx["captured_literal_len"] = len(lit)
-    try:
-        v2 = ast.literal_eval(lit)
-        return ZonesExtraction(ok=True, method="internal_regex_balanced_literal_eval", value=v2, error=None, forensics=fx)
-    except Exception as e:
-        fx["internal_fallback_literal_eval_error"] = f"{type(e).__name__}: {e}"
-        return ZonesExtraction(ok=False, method="internal_failed", value=None, error=fx["internal_fallback_literal_eval_error"], forensics=fx)
-main
+
 
 # -------------------------
 # Optional: call tests/contracts.py extractor (if available)
 # -------------------------
 
-chore/update-contract-baseline
-main
 def try_tests_extractor(contracts_mod: Any, instrument_path: Path) -> Tuple[Optional[Any], Dict[str, Any]]:
     """
     Try to call extract_zone_thresholds_ast from loaded contracts module.
@@ -570,17 +545,10 @@ def main() -> int:
         "global": global_level(axes),
         "summary": f"CLI:{axes['cli']}/ZONES:{axes['zones']}/FORMULA:{axes['formula']}",
     }
-chore/update-contract-baseline
 
-    baseline = canonicalize_json(baseline)
-
-    ensure_parent_dir(out_path)
-    with out_path.open("w", encoding="utf-8") as f:
-        json.dump(baseline, f, ensure_ascii=False, indent=2, sort_keys=True)
     ensure_parent_dir(out_path)
     with out_path.open("w", encoding="utf-8") as f:
         json.dump(baseline, f, ensure_ascii=False, indent=2, sort_keys=False)
-main
         f.write("\n")
 
     return 0
