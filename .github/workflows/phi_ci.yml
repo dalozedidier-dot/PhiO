@@ -20,7 +20,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install deps for setup-python interpreter
         shell: bash
         run: |
           set -euo pipefail
@@ -30,94 +30,37 @@ jobs:
           fi
           pip install pytest
 
-      - name: Normalize CLI scripts (LF + shebang + chmod)
+      - name: Install pytest for /usr/bin/python (system interpreter)
         shell: bash
         run: |
           set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y python3-pip
+          /usr/bin/python -m pip install -U pip
+          /usr/bin/python -m pip install pytest
 
-          python - <<'PY'
-          from pathlib import Path
-
-          def normalize(path: str, ensure_shebang: bool = False, shebang: str = "#!/usr/bin/env python3"):
-            p = Path(path)
-            if not p.exists():
-              return
-
-            b = p.read_bytes()
-
-            # Remove UTF-8 BOM if present
-            if b.startswith(b"\xef\xbb\xbf"):
-              b = b[3:]
-
-            # Normalize line endings to LF
-            b = b.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
-
-            # Ensure shebang first line if required
-            if ensure_shebang and not b.startswith(b"#!"):
-              b = (shebang + "\n").encode("utf-8") + b
-
-            p.write_bytes(b)
-
-          normalize("phi_otimes_o_instrument_v0_1.py", ensure_shebang=True)
-          normalize("scripts/phio_llm_collect.sh", ensure_shebang=False)
-          PY
-
-          chmod +x phi_otimes_o_instrument_v0_1.py 2>/dev/null || true
-          chmod +x scripts/phio_llm_collect.sh 2>/dev/null || true
-
-          echo "Instrument head:"
-          head -n 2 phi_otimes_o_instrument_v0_1.py || true
-          echo ""
-          ls -la phi_otimes_o_instrument_v0_1.py || true
-
-      - name: Run PhiO tests (capture real exit code)
+      - name: Run PhiO tests
         shell: bash
         env:
           PYTHONPATH: .
         run: |
-          set +e
-          rm -rf _ci_out
-          mkdir -p _ci_out
-
-          code=0
-
+          set -euo pipefail
           if [ -f run_all_tests.sh ]; then
-            bash run_all_tests.sh 2>&1 | tee _ci_out/run_all_tests.log
-            code=$?
+            bash run_all_tests.sh
           elif [ -f run_all_tests.py ]; then
-            python run_all_tests.py 2>&1 | tee _ci_out/run_all_tests.log
-            code=$?
+            python run_all_tests.py
           else
-            echo "No run_all_tests.sh or run_all_tests.py found" | tee _ci_out/run_all_tests.log
-            code=2
+            echo "No run_all_tests.sh or run_all_tests.py found"
+            exit 2
           fi
 
-          pytest -q 2>&1 | tee _ci_out/pytest.log
-          pytest_code=$?
-          if [ "$pytest_code" != "0" ]; then
-            code=$pytest_code
-          fi
-
-          echo "$code" > _ci_out/exit_code.txt
-          exit 0
-
-      - name: Upload artifacts
+      - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: phio_artifacts
           path: |
-            _ci_out/
             test-reports/
+            _ci_out/
           retention-days: 30
           if-no-files-found: ignore
-
-      - name: Fail if tests failed
-        shell: bash
-        run: |
-          set -euo pipefail
-          code=$(cat _ci_out/exit_code.txt || echo 99)
-          echo "exit_code=$code"
-          if [ "$code" != "0" ]; then
-            exit 1
-          fi
