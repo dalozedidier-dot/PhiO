@@ -2,13 +2,15 @@ name: Smoke (PhiO)
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
   workflow_dispatch:
 
 jobs:
   smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -18,29 +20,38 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install
+      - name: Install dependencies
         shell: bash
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install pytest
+          # Si le projet est packagé, on tente editable.
+          if [ -f pyproject.toml ]; then
+            python -m pip install -e ".[dev]" || python -m pip install -e .
+          elif [ -f requirements.txt ]; then
+            python -m pip install -r requirements.txt
+          fi
+          # Minimum vital pour ton erreur actuelle
+          python -m pip install pytest
 
       - name: Run PhiO tests
         shell: bash
         run: |
           set -euo pipefail
-          if [ -x ./run_all_tests.sh ]; then
-            ./run_all_tests.sh
+          mkdir -p _ci_out
+          # On essaie d'abord ton runner "maison" s'il existe, sinon pytest.
+          if [ -f "scripts/run_all_tests.sh" ]; then
+            bash scripts/run_all_tests.sh 2>&1 | tee _ci_out/phio_tests.log
+          elif [ -f "scripts/run_all_tests.py" ]; then
+            python scripts/run_all_tests.py 2>&1 | tee _ci_out/phio_tests.log
           else
-            python -m pytest -q
+            python -m pytest -q 2>&1 | tee _ci_out/phio_tests.log
           fi
 
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: phio_artifacts
-          path: |
-            test-reports/
-            _ci_out/
+          name: phio_ci_out
+          path: _ci_out/
+          if-no-files-found: warn
