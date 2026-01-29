@@ -2,7 +2,7 @@
   "contract_version": "1.5",
   "instrument_path": "/home/runner/work/Black-Widow/Black-Widow/phi_otimes_o_instrument_v0_1.py",
   "instrument_hash": "e1dde7d959de7d6dbf419ff64b73ac27fa44a3481725b3a0d31cb306d846b941",
-  "validation_timestamp": "2026-01-29T05:55:56.263114+00:00",
+  "validation_timestamp": "2026-01-29T08:02:05.886156+00:00",
   "_probe_forensics": {
     "probe_path": "/home/runner/work/Black-Widow/Black-Widow/contract_probe.py",
     "probe_sha256": "0185759e8e8628179d0cbc9184b71691f722f8308c225c6f5cd92a94fd440bbe",
@@ -14,10 +14,10 @@
       "platform": "Linux-6.11.0-1018-azure-x86_64-with-glibc2.39"
     },
     "env": {
-      "GITHUB_SHA": "b5a188c87a0c773130d58554b5611941e73a6ab6",
+      "GITHUB_SHA": "c48d208c1c65739f5ecfbacdc6a5b948dcbd1a9f",
       "GITHUB_REF": "refs/heads/main",
       "GITHUB_WORKFLOW": "Generate contract baseline",
-      "GITHUB_RUN_ID": "21467389446"
+      "GITHUB_RUN_ID": "21470295583"
     },
     "contracts": {
       "contracts_path": "/home/runner/work/Black-Widow/Black-Widow/tests/contracts.py",
