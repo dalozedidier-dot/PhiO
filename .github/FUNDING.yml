@@ -1,0 +1,34 @@
+# .github/FUNDING.yml
+# Objectif : exposer des canaux de soutien réels. Ne renseigner que ce qui existe.
+# GitHub affichera les boutons correspondants sur la page du dépôt.
+
+# --- Option 1 (prioritaire si activé) : GitHub Sponsors ---
+# Renseigner uniquement si le compte est "Sponsors-enabled".
+# Jusqu'à 4 usernames.
+github: [YOUR_GITHUB_USERNAME]
+
+# --- Option 2 : plateformes (un seul identifiant chacune) ---
+# Décommenter uniquement si vous avez un compte actif.
+# patreon: YOUR_PATREON_USERNAME
+# open_collective: YOUR_OPEN_COLLECTIVE_SLUG
+# ko_fi: YOUR_KOFI_USERNAME
+# buy_me_a_coffee: YOUR_BUYMEACOFFEE_USERNAME
+# liberapay: YOUR_LIBERAPAY_USERNAME
+# issuehunt: YOUR_ISSUEHUNT_USERNAME
+# polar: YOUR_POLAR_USERNAME
+# thanks_dev: YOUR_THANKSDEV_USERNAME
+
+# --- Option 3 : financement via sponsor/maintenance logicielle (rare) ---
+# Exemple tidelift : "pypi/nom-du-package" ou "npm/nom-du-package"
+# tidelift: PLATFORM/NAME
+# community_bridge: PROJECT_SLUG
+# lfx_crowdfunding: PROJECT_SLUG
+
+# --- Option 4 : liens custom (recommandé si pas de Sponsors) ---
+# Jusqu'à 4 URL stables. Exemples : page support sur site, page OSF, PayPal.me, Stripe, etc.
+# Important : utiliser des liens permanents (pas d'URL temporaires).
+custom:
+  - "https://YOUR_SUPPORT_PAGE_URL"
+  # - "https://YOUR_OSF_PROJECT_OR_REGISTRATION_URL"
+  # - "https://paypal.me/YOUR_ID"
+  # - "https://buy.stripe.com/YOUR_LINK"
