@@ -1,0 +1,111 @@
+name: Generate contract baseline
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generate-baseline:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONHASHSEED: "0"
+      TZ: "UTC"
+      LC_ALL: "C.UTF-8"
+      LANG: "C.UTF-8"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Input proof (instrument)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -la
+          test -f ./phi_otimes_o_instrument_v0_1.py
+          sha256sum ./phi_otimes_o_instrument_v0_1.py
+          grep -n "^\s*ZONE_THRESHOLDS\s*=" -n ./phi_otimes_o_instrument_v0_1.py || true
+
+      - name: Generate baseline (strict JSON)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .contract
+          python contract_probe.py \
+            --instrument ./phi_otimes_o_instrument_v0_1.py \
+            --out .contract/contract_baseline.json
+
+      - name: Validate baseline is non-empty and has minimal keys
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s .contract/contract_baseline.json
+          python - <<'PY'
+          import json, sys
+          p = ".contract/contract_baseline.json"
+          with open(p, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+          if not isinstance(data, dict) or data == {}:
+            print("❌ Baseline is empty ({}). Run generate_baseline.yml.")
+            sys.exit(1)
+
+          required = ["contract_version","instrument_path","instrument_hash","validation_timestamp","summary","cli","zones","compliance","formula","_probe_forensics"]
+          missing = [k for k in required if k not in data]
+          if missing:
+            print("❌ Baseline missing keys:", missing)
+            sys.exit(1)
+
+          json.dumps(data)
+          print("✅ Baseline basic structure OK.")
+          PY
+
+      - name: Log zones forensics
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          p = ".contract/contract_baseline.json"
+          with open(p, "r", encoding="utf-8") as f:
+            b = json.load(f)
+
+          z = b.get("zones", {})
+          fx = z.get("_forensics", {}) if isinstance(z, dict) else {}
+          internal = fx.get("internal", {}) if isinstance(fx, dict) else {}
+
+          print("zones.method =", z.get("method"))
+          print("zones_count =", b.get("summary", {}).get("zones_count"))
+          print("zones._forensics.instrument_has_ZONE_THRESHOLDS =", internal.get("instrument_has_ZONE_THRESHOLDS"))
+          print("zones._forensics.instrument_zone_line =", internal.get("instrument_zone_line"))
+
+          contracts = b.get("_probe_forensics", {}).get("contracts", {})
+          print("_probe_forensics.contracts_load_error =", contracts.get("contracts_load_error"))
+          PY
+
+      - name: Commit baseline (if changed)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add .contract/contract_baseline.json
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit -m "chore(contract): update baseline"
+          git push

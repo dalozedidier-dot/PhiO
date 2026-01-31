@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+.coverage.*
+.cache/
+dist/
+build/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# CI / generated reports
+.contract/test-reports/
+reports/
+_test_output_*
+_stress_output
+_cross*
+_final_test
+
+# OS
+.DS_Store

@@ -1,0 +1,115 @@
+{
+  "contract_version": "1.5",
+  "instrument_path": "/home/runner/work/PhiO/PhiO/phi_otimes_o_instrument_v0_1.py",
+  "instrument_hash": "e1dde7d959de7d6dbf419ff64b73ac27fa44a3481725b3a0d31cb306d846b941",
+  "validation_timestamp": "2026-01-27T07:14:55.821729+00:00",
+  "_probe_forensics": {
+    "probe_path": "/home/runner/work/PhiO/PhiO/contract_probe.py",
+    "probe_sha256": "0185759e8e8628179d0cbc9184b71691f722f8308c225c6f5cd92a94fd440bbe",
+    "repo_root": "/home/runner/work/PhiO/PhiO",
+    "cwd": "/home/runner/work/PhiO/PhiO",
+    "python": {
+      "version": "3.11.14 (main, Oct 10 2025, 01:03:14) [GCC 13.3.0]",
+      "executable": "/opt/hostedtoolcache/Python/3.11.14/x64/bin/python",
+      "platform": "Linux-6.11.0-1018-azure-x86_64-with-glibc2.39"
+    },
+    "env": {
+      "GITHUB_SHA": "ff07e702e13ff84f579b3cf1acb24d734b3750ea",
+      "GITHUB_REF": "refs/heads/main",
+      "GITHUB_WORKFLOW": "Generate contract baseline",
+      "GITHUB_RUN_ID": "21388088880"
+    },
+    "contracts": {
+      "contracts_path": "/home/runner/work/PhiO/PhiO/tests/contracts.py",
+      "contracts_exists": true,
+      "contracts_loaded": true,
+      "contracts_sha256": "ff879c115528caaef071cdfdc58a5afb959fdeef27b4ce7fa8edda197ac307f7",
+      "contracts_load_error": null
+    }
+  },
+  "compliance": {
+    "axes": {
+      "cli": "PARTIAL",
+      "zones": "PARTIAL",
+      "formula": "MINIMAL"
+    },
+    "global": "MINIMAL",
+    "summary": "CLI:PARTIAL/ZONES:PARTIAL/FORMULA:MINIMAL"
+  },
+  "summary": {
+    "cli_help_valid": true,
+    "zones_attempted": true,
+    "zones_count": 0,
+    "formula_checked": false,
+    "formula_pass": false
+  },
+  "cli": {
+    "help_valid": true,
+    "help_len": 1117,
+    "subcommands": [],
+    "flags": [
+      "--agg_Cx",
+      "--agg_D",
+      "--agg_G",
+      "--agg_K",
+      "--agg_tau",
+      "--agg_τ",
+      "--bottleneck",
+      "--help",
+      "--input",
+      "--outdir"
+    ],
+    "required_subcommands": [
+      "new-template",
+      "score"
+    ],
+    "required_flags": [
+      "--input",
+      "--outdir"
+    ],
+    "tau_aliases": {
+      "has_tau_ascii": true,
+      "has_tau_unicode": true
+    },
+    "_forensics": {
+      "cmd": [
+        "/opt/hostedtoolcache/Python/3.11.14/x64/bin/python",
+        "/home/runner/work/PhiO/PhiO/phi_otimes_o_instrument_v0_1.py",
+        "--help"
+      ],
+      "returncode": 0,
+      "timeout_s": 20,
+      "stderr_tail": ""
+    }
+  },
+  "zones": {
+    "zones": {},
+    "constants": {},
+    "if_chain": [],
+    "attempted": true,
+    "method": "ast_failed",
+    "error": "assign_marker_not_found",
+    "_forensics": {
+      "tests_extractor_available": true,
+      "tests_extractor_called": true,
+      "tests_extractor_returned_none": true,
+      "tests_extractor_type": null,
+      "tests_extractor_error": null,
+      "internal": {
+        "instrument_has_ZONE_THRESHOLDS": false,
+        "instrument_zone_line": null,
+        "instrument_sha256": "e1dde7d959de7d6dbf419ff64b73ac27fa44a3481725b3a0d31cb306d846b941",
+        "instrument_head_sha256": "e1dde7d959de7d6dbf419ff64b73ac27fa44a3481725b3a0d31cb306d846b941",
+        "internal_ast_error": "not_found_in_ast",
+        "internal_fallback_error": "assign_marker_not_found",
+        "internal_fallback_literal_eval_error": null,
+        "captured_literal_len": null
+      },
+      "chosen": "failed"
+    }
+  },
+  "formula": {
+    "golden_attempted": false,
+    "golden_pass": false
+  }
+}
