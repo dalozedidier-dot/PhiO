@@ -1,0 +1,16 @@
+#!/bin/sh
+# PhiO contract baseline lock
+# Blocks staged changes to .contract/contract_baseline.json unless PHIO_UPDATE_BASELINE=true
+
+if git diff --cached --name-only | grep -q "^\.contract/contract_baseline\.json$"; then
+  if [ "${PHIO_UPDATE_BASELINE:-false}" != "true" ]; then
+    echo "❌ Baseline change detected: .contract/contract_baseline.json"
+    echo "To update baseline intentionally:"
+    echo "  export PHIO_UPDATE_BASELINE=true"
+    echo "  python -m pytest tests/test_99_contract_regression.py -v --tb=short"
+    echo ""
+    echo "Or unstage it:"
+    echo "  git restore --staged .contract/contract_baseline.json"
+    exit 1
+  fi
+fi

@@ -1,0 +1,100 @@
+name: Test Exhaustif du Collecteur LLM
+
+on:
+  push:
+    paths:
+      - "scripts/phio_llm_collect.sh"
+      - "tests/test_llm_collector_*.sh"
+      - "tests/test_cross_validation.sh"
+      - "run_collector_tests.sh"
+      - "tests/test_llm_collector_exhaustive.sh"
+      - ".github/workflows/collector_tests.yml"
+  pull_request:
+    paths:
+      - "scripts/phio_llm_collect.sh"
+      - "tests/test_llm_collector_*.sh"
+      - "tests/test_cross_validation.sh"
+      - "run_collector_tests.sh"
+      - "tests/test_llm_collector_exhaustive.sh"
+      - ".github/workflows/collector_tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  collector-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Python deps (if requirements.txt)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            echo "No requirements.txt found; skipping pip install."
+          fi
+
+      - name: Ensure executable bits (defensive)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          chmod +x scripts/phio_llm_collect.sh || true
+          chmod +x run_collector_tests.sh || true
+          chmod +x tests/test_llm_collector_exhaustive.sh || true
+          chmod +x tests/test_llm_collector_stress.sh || true
+          chmod +x tests/test_cross_validation.sh || true
+          chmod +x validate_contract_warnings.sh || true
+
+      - name: Run suite (verbose + capture log)
+        shell: bash
+        env:
+          TRACE: "1"
+          COLLECTOR_TIMEOUT: "900"
+        run: |
+          set -xEeuo pipefail
+          mkdir -p test-reports/collector
+
+          echo "Git status AVANT:"
+          git status --porcelain || true
+
+          echo "=== RUN: run_collector_tests.sh ==="
+          bash -x ./run_collector_tests.sh 2>&1 | tee test-reports/collector/collector_full.log
+          rc=${PIPESTATUS[0]}
+          echo "=== EXIT CODE: ${rc} ==="
+
+          echo "Bundle dir (if any):"
+          ls -la _llm_bundle || true
+          ls -la _llm_bundle/phio_llm_bundle.tar.gz || true
+
+          echo "Git status APRÈS:"
+          git status --porcelain || true
+
+          exit "${rc}"
+
+      - name: Upload artifacts (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: collector-test-artifacts
+          path: |
+            test-reports/**
+            _llm_bundle/**
+            *.log
+          if-no-files-found: warn
+          retention-days: 3

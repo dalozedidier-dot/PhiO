@@ -1,0 +1,63 @@
+diff --git a/.github/workflows/phi_ci.yml b/.github/workflows/phi_ci.yml
+index 3333333..4444444 100644
+--- a/.github/workflows/phi_ci.yml
++++ b/.github/workflows/phi_ci.yml
+@@ -1,6 +1,20 @@
+ name: Phi CI
+ on:
+   push:
+   pull_request:
++
++env:
++  PYTHONHASHSEED: "0"
++  TZ: "UTC"
++  LC_ALL: "C.UTF-8"
++  LANG: "C.UTF-8"
++
+ jobs:
+   ci:
+     runs-on: ubuntu-latest
+@@ -20,6 +34,44 @@ jobs:
+       - name: Checkout
+         uses: actions/checkout@v4
++
++      - name: Validate baseline (fail-fast, no compensation)
++        shell: bash
++        run: |
++          set -euo pipefail
++          test -f .contract/contract_baseline.json
++          test -s .contract/contract_baseline.json
++          python - <<'PY'
++          import json, sys
++          p = ".contract/contract_baseline.json"
++          with open(p, "r", encoding="utf-8") as f:
++            b = json.load(f)
++
++          if not isinstance(b, dict) or b == {}:
++            print("❌ Baseline is empty ({}). Run generate_baseline.yml.")
++            sys.exit(1)
++
++          # minimal keys
++          for k in ["summary","zones"]:
++            if k not in b:
++              print(f"❌ Baseline missing key: {k}")
++              sys.exit(1)
++
++          zones_count = b.get("summary", {}).get("zones_count", 0)
++          z = b.get("zones", {})
++          fx = (z.get("_forensics", {}) if isinstance(z, dict) else {})
++          internal = (fx.get("internal", {}) if isinstance(fx, dict) else {})
++          has_marker = internal.get("instrument_has_ZONE_THRESHOLDS")
++
++          # If we *know* marker exists, zones_count must be > 0
++          if has_marker is True and int(zones_count) == 0:
++            print("❌ Zones missing but instrument_has_ZONE_THRESHOLDS=true. Fix extraction or literal form.")
++            sys.exit(1)
++
++          # If marker is absent, fail with correct causal label (input/target)
++          if has_marker is False:
++            print("❌ Instrument has no ZONE_THRESHOLDS marker. Fix instrument path/content.")
++            sys.exit(1)
++
++          print("✅ Baseline validated.")
++          PY
