@@ -2,7 +2,7 @@
   "contract_version": "1.5",
   "instrument_path": "/home/runner/work/Phi-O-blac-widow/Phi-O-blac-widow/phi_otimes_o_instrument_v0_1.py",
   "instrument_hash": "e1dde7d959de7d6dbf419ff64b73ac27fa44a3481725b3a0d31cb306d846b941",
-  "validation_timestamp": "2026-01-30T14:57:08.691320+00:00",
+  "validation_timestamp": "2026-01-31T10:14:03.797644+00:00",
   "_probe_forensics": {
     "probe_path": "/home/runner/work/Phi-O-blac-widow/Phi-O-blac-widow/contract_probe.py",
     "probe_sha256": "0185759e8e8628179d0cbc9184b71691f722f8308c225c6f5cd92a94fd440bbe",
@@ -14,10 +14,10 @@
       "platform": "Linux-6.11.0-1018-azure-x86_64-with-glibc2.39"
     },
     "env": {
-      "GITHUB_SHA": "0ef251ef5345b800ba051155bffdeb04def18144",
+      "GITHUB_SHA": "bf987cef383b9bad2d9e52864ae8de52970e82e4",
       "GITHUB_REF": "refs/heads/main",
       "GITHUB_WORKFLOW": "Generate contract baseline",
-      "GITHUB_RUN_ID": "21520080287"
+      "GITHUB_RUN_ID": "21542934804"
     },
     "contracts": {
       "contracts_path": "/home/runner/work/Phi-O-blac-widow/Phi-O-blac-widow/tests/contracts.py",
